@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { lt, sql } from "drizzle-orm";
+import { Elysia } from "elysia";
 import { db } from "./db/index.ts";
 import { listings, listingSchema } from "./db/schema.ts";
 import type { Listing } from "./db/schema.ts";
@@ -74,79 +75,66 @@ const embedHtml = (listing: Listing) => {
 </html>`;
 };
 
-const server = Bun.serve({
-  port: PORT,
-  async fetch(req) {
-    const url = new URL(req.url);
-    const path = url.pathname;
+const app = new Elysia();
 
-    const itemMatch = /^\/marketplace\/item\/([^/]+)$/.exec(path);
-    if (req.method === "GET" && itemMatch) {
-      const id = itemMatch[1]!;
-      const [listing] = await db
-        .select()
-        .from(listings)
-        .where(eq(listings.id, id))
-        .limit(1);
+app.get("/marketplace/item/:id", async ({ params, headers }) => {
+  const id = params.id;
 
-      if (!listing) return jsonResponse({ error: "Not found" }, 404);
+  const [listing] = await db
+    .select()
+    .from(listings)
+    .where(eq(listings.id, id))
+    .limit(1);
 
-      const ua = req.headers.get("user-agent") ?? "";
-      const isBot = /Discordbot|Slackbot|Twitterbot|facebookexternalhit/i.test(
-        ua,
-      );
+  if (!listing) return jsonResponse({ error: "Not found" }, 404);
 
-      if (isBot)
-        return new Response(embedHtml(listing), {
-          headers: { "Content-Type": "text/html; charset=utf-8" },
-        });
+  const ua = String(headers["user-agent"] ?? "");
+  const isBot = /Discordbot|Slackbot|Twitterbot|facebookexternalhit/i.test(ua);
 
-      return new Response(null, {
-        status: 301,
-        headers: {
-          Location: facebookUrl(listing.id),
-        },
-      });
-    }
+  if (isBot)
+    return new Response(embedHtml(listing), {
+      headers: { "Content-Type": "text/html; charset=utf-8" },
+    });
 
-    if (req.method !== "POST" || path !== "/")
-      return jsonResponse({ error: "POST / with JSON body required" }, 405);
-
-    let json: unknown;
-    try {
-      json = await req.json();
-    } catch {
-      return jsonResponse({ error: "Body must be valid JSON" }, 400);
-    }
-
-    const { data, success, error } = listingSchema.safeParse(json);
-    if (!success)
-      return jsonResponse(
-        {
-          error: "Validation failed",
-          issues: error.flatten(),
-        },
-        400,
-      );
-
-    try {
-      await deleteExpiredListings();
-      await db.insert(listings).values({
-        id: data.id,
-        title: data.title,
-        price: data.price,
-        listed: data.listed,
-        details: data.details,
-        description: data.description,
-        images: data.images,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Database error";
-      return jsonResponse({ error: message }, 500);
-    }
-
-    return jsonResponse({ ok: true, id: data.id }, 201);
-  },
+  return new Response(null, {
+    status: 301,
+    headers: {
+      Location: facebookUrl(listing.id),
+    },
+  });
 });
 
-console.log(`Listening on http://localhost:${server.port}`);
+app.post("/", async ({ body }) => {
+  const json: unknown = body;
+
+  const { data, success, error } = listingSchema.safeParse(json);
+  if (!success)
+    return jsonResponse(
+      {
+        error: "Validation failed",
+        issues: error.flatten(),
+      },
+      400,
+    );
+
+  try {
+    await deleteExpiredListings();
+    await db.insert(listings).values({
+      id: data.id,
+      title: data.title,
+      price: data.price,
+      listed: data.listed,
+      details: data.details,
+      description: data.description,
+      images: data.images,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Database error";
+    return jsonResponse({ error: message }, 500);
+  }
+
+  return jsonResponse({ ok: true, id: data.id }, 201);
+});
+
+export default app;
