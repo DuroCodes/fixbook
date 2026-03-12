@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { lt, sql } from "drizzle-orm";
-import { Elysia } from "elysia";
+import { Hono } from "hono";
 import { db } from "./db/index.ts";
 import { listings, listingSchema } from "./db/schema.ts";
 import type { Listing } from "./db/schema.ts";
@@ -75,10 +75,10 @@ const embedHtml = (listing: Listing) => {
 </html>`;
 };
 
-const app = new Elysia();
+const app = new Hono();
 
-app.get("/marketplace/item/:id", async ({ params, headers }) => {
-  const id = params.id;
+app.get("/marketplace/item/:id", async (c) => {
+  const { id } = c.req.param();
 
   const [listing] = await db
     .select()
@@ -88,7 +88,7 @@ app.get("/marketplace/item/:id", async ({ params, headers }) => {
 
   if (!listing) return jsonResponse({ error: "Not found" }, 404);
 
-  const ua = String(headers["user-agent"] ?? "");
+  const ua = c.req.header("user-agent") ?? "";
   const isBot = /Discordbot|Slackbot|Twitterbot|facebookexternalhit/i.test(ua);
 
   if (isBot)
@@ -104,8 +104,8 @@ app.get("/marketplace/item/:id", async ({ params, headers }) => {
   });
 });
 
-app.post("/", async ({ body }) => {
-  const json: unknown = body;
+app.post("/", async (c) => {
+  const json: unknown = await c.req.json();
 
   const { data, success, error } = listingSchema.safeParse(json);
   if (!success)
