@@ -24,21 +24,21 @@ const deleteExpiredListings = async () =>
 
 const embedDescription = (listing: Listing) =>
   [
-    `**Price:** ${listing.price}`,
-    `**Listed:** ${listing.listed}`,
+    `<b>Price:</b> ${listing.price}`,
+    `<b>Listed:</b> ${listing.listed}`,
     ...(listing.details.length > 0
-      ? ["**Details:**", ...listing.details.map((d) => `- ${d}`)]
+      ? ["<b>Details:</b>", ...listing.details.map((d) => `- ${d}`)]
       : []),
     "Description:",
     listing.description,
-  ].join("\n");
+  ].join("<br>");
 
 const embedHtml = (listing: Listing) => {
   const pageUrl = projectUrl(listing.id);
   const redirectUrl = facebookUrl(listing.id);
   const desc = embedDescription(listing);
   const escapedTitle = listing.title.replace(/"/g, "&quot;");
-  const escapedDesc = desc.replace(/"/g, "&quot;").replace(/\n/g, " ");
+  const escapedDesc = desc.replace(/"/g, "&quot;");
   const primaryImage = listing.images?.at(0);
   const hasImage = !!primaryImage;
 
