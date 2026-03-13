@@ -75,7 +75,7 @@ const embedHtml = (listing: Listing) => {
 </html>`;
 };
 
-const app = new Hono().basePath("/api");
+const app = new Hono();
 
 app.get("/marketplace/item/:id", async (c) => {
   const { id } = c.req.param();

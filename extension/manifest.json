@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Fixbook Marketplace Link",
+  "version": "1.0",
+  "description": "Generates Fixbook links for Facebook Marketplace listings and copies them to your clipboard.",
+  "action": {
+    "default_title": "Copy Fixbook Link"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "https://fixbook-nu.vercel.app/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
