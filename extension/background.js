@@ -19,6 +19,16 @@ async function scrapeAndSendToDiscord() {
     let timeListed = "";
     let condition = "";
     let details = [];
+    let authorName = "";
+    let authorUrl = "";
+
+    // --- Author (seller) --- e.g. "John Myers" with link to marketplace profile
+    const authorLink = document.querySelector('a[href*="/marketplace/profile/"]');
+    if (authorLink) {
+        authorName = (authorLink.getAttribute('aria-label') || authorLink.innerText || '').trim();
+        if (authorLink.href) authorUrl = authorLink.href;
+        if (authorName) debugInfo.push('Found author: ' + authorName);
+    }
 
     // --- STRATEGY: Relational & Heuristic ---
     // 1. Find the "Anchor" Media (Largest Image or Video on Page)
@@ -257,6 +267,8 @@ async function scrapeAndSendToDiscord() {
         description,
         images,
     };
+    if (authorName) payload.authorName = authorName;
+    if (authorUrl) payload.authorUrl = authorUrl;
 
     // Fallback clipboard approach using a temporary <textarea> so we don't depend
     // on navigator.clipboard (which can fail on some pages/contexts).

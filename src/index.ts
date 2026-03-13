@@ -161,12 +161,20 @@ app.get("/marketplace/item/:id/oembed", async (c) => {
 
   if (!listing) return jsonResponse({ error: "Not found" }, 404);
 
+  // Like FixupX: show seller as author when we have it; otherwise emoji stats line.
+  const authorName = listing.authorName?.trim()
+    ? listing.authorName
+    : oEmbedAuthorLine(listing);
+  const authorUrl = listing.authorName?.trim() && listing.authorUrl
+    ? listing.authorUrl
+    : facebookUrl(listing.id);
+
   const body = {
     version: "1.0",
     type: "link",
     title: listing.title,
-    author_name: oEmbedAuthorLine(listing),
-    author_url: facebookUrl(listing.id),
+    author_name: authorName,
+    author_url: authorUrl,
     provider_name: "Fixbook",
     provider_url: HOST.replace(/\/$/, ""),
   };
@@ -196,6 +204,8 @@ app.post("/", async (c) => {
       details: data.details,
       description: data.description,
       images: data.images,
+      authorName: data.authorName,
+      authorUrl: data.authorUrl,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Database error";
