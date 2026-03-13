@@ -5,7 +5,9 @@ import { listings, listingSchema, type Listing } from "./db/schema.js";
 import { db } from "./db/index.js";
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
-const HOST = process.env.FIXBOOK_HOST ?? `http://localhost:${PORT}`;
+const HOST =
+  process.env.FIXBOOK_HOST ??
+  (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://localhost:${PORT}`);
 const ITEM_PATH = (id: string) => `/marketplace/item/${id}`;
 const facebookUrl = (id: string) =>
   `https://www.facebook.com/marketplace/item/${id}`;
@@ -63,6 +65,7 @@ const embedHtml = (listing: Listing) => {
   <meta charset="utf-8">
   <meta http-equiv="refresh" content="0;url=${redirectUrl}">
   <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Fixbook">
   <meta property="og:title" content="${escapedTitle}">
   <meta property="og:description" content="${escapedDesc}">
   <meta property="og:url" content="${pageUrl}">
