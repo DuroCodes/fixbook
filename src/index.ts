@@ -1,9 +1,8 @@
 import { eq } from "drizzle-orm";
 import { lt, sql } from "drizzle-orm";
 import { Hono } from "hono";
-import { db } from "./db/index.ts";
-import { listings, listingSchema } from "./db/schema.ts";
-import type { Listing } from "./db/schema.ts";
+import { listings, listingSchema, type Listing } from "./db/schema";
+import { db } from "./db/index";
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const HOST = process.env.FIXBOOK_HOST ?? `http://localhost:${PORT}`;
@@ -129,8 +128,7 @@ app.post("/", async (c) => {
       images: data.images,
     });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Database error";
+    const message = error instanceof Error ? error.message : "Database error";
     return jsonResponse({ error: message }, 500);
   }
 
