@@ -25,21 +25,57 @@ const deleteExpiredListings = async () =>
     .delete(listings)
     .where(lt(listings.createdAt, sql`NOW() - INTERVAL '7 days'`));
 
+// Parse "Listed 11 weeks ago in Richland, MO" -> { timeAgo, location? }
+function parseListed(listed: string): { timeAgo: string; location?: string } {
+  const inMatch = listed.match(/^Listed\s+(.+?)\s+in\s+(.+)$/i);
+  if (inMatch) return { timeAgo: inMatch[1].trim(), location: inMatch[2].trim() };
+  const rest = listed.replace(/^Listed\s+/i, "").trim();
+  return { timeAgo: rest || listed };
+}
+
+// Compact details: "Exterior color: White · Interior color: Tan" -> "White / Tan"
+function detailsSummary(details: string[]): string {
+  if (details.length === 0) return "";
+  const values = details.flatMap((d) =>
+    d.split(" · ").map((s) => (s.includes(":") ? s.replace(/^[^:]+:\s*/, "").trim() : s.trim()))
+  ).filter(Boolean);
+  return values.slice(0, 5).join(" / "); // cap so embed doesn't explode
+}
+
+// Remove price, listed text, and location from description to avoid duplication.
+function stripRedundantFromDescription(description: string, listing: Listing): string {
+  let out = description;
+  const priceEscaped = listing.price.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  out = out.replace(new RegExp(priceEscaped, "gi"), " ").trim();
+  out = out.replace(new RegExp(listing.listed.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), " ").trim();
+  const { location } = parseListed(listing.listed);
+  if (location) {
+    out = out.replace(new RegExp(location.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi"), " ").trim();
+  }
+  return out.replace(/\s{2,}/g, " ").trim();
+}
+
+// Emoji line for author + meta (like FixupX): 💵 $600 📅 11 weeks ago 📍 Richland, MO 📝 White / Tan
+function emojiLine(listing: Listing): string {
+  const { timeAgo, location } = parseListed(listing.listed);
+  const parts = [
+    `💵 ${listing.price}`,
+    `📅 ${timeAgo}`,
+    ...(location ? [`📍 ${location}`] : []),
+    ...(detailsSummary(listing.details) ? [`📝 ${detailsSummary(listing.details)}`] : []),
+  ];
+  return parts.join(" ");
+}
+
 // Meta description is plain text only (og:description/twitter:description).
-const embedDescription = (listing: Listing) =>
-  [
-    `Price: ${listing.price}`,
-    `Listed: ${listing.listed}`,
-    ...(listing.details.length > 0
-      ? ["Details:", ...listing.details.map((d) => `- ${d}`)]
-      : []),
-    "Description:",
-    listing.description,
-  ].join(" ");
+const embedDescription = (listing: Listing) => {
+  const line = emojiLine(listing);
+  const strippedDesc = stripRedundantFromDescription(listing.description, listing);
+  return strippedDesc ? `${line} ${strippedDesc}` : line;
+};
 
 // Key stats for oEmbed author_name (Discord shows this line in bold, like FixupX).
-const oEmbedAuthorLine = (listing: Listing) =>
-  `Price: ${listing.price} • Listed: ${listing.listed}`;
+const oEmbedAuthorLine = (listing: Listing) => emojiLine(listing);
 
 const embedHtml = (listing: Listing) => {
   const pageUrl = projectUrl(listing.id);
