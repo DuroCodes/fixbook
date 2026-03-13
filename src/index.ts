@@ -6,7 +6,7 @@ import { db } from "./db/index.js";
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const HOST = process.env.FIXBOOK_HOST ?? `http://localhost:${PORT}`;
-const ITEM_PATH = (id: string) => `/api/marketplace/item/${id}`;
+const ITEM_PATH = (id: string) => `/marketplace/item/${id}`;
 const facebookUrl = (id: string) =>
   `https://www.facebook.com/marketplace/item/${id}`;
 const projectUrl = (id: string) => `${HOST.replace(/\/$/, "")}${ITEM_PATH(id)}`;
