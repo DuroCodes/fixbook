@@ -319,7 +319,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
     (async () => {
         try {
-            const response = await fetch("https://fixbook-nu.vercel.app/", {
+            const response = await fetch("https://fixbook-nu.vercel.app/api", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(message.payload),
@@ -336,7 +336,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
             const json = await response.json();
             const listingId = json.id || message.payload?.id;
-            const fixbookUrl = `https://fixbook-nu.vercel.app/marketplace/item/${encodeURIComponent(
+            const fixbookUrl = `https://fixbook-nu.vercel.app/api/marketplace/item/${encodeURIComponent(
                 listingId
             )}`;
 

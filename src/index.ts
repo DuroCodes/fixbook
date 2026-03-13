@@ -6,8 +6,9 @@ import { db } from "./db/index";
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const HOST = process.env.FIXBOOK_HOST ?? `http://localhost:${PORT}`;
-const ITEM_PATH = (id: string) => `/marketplace/item/${id}`;
-const facebookUrl = (id: string) => `https://www.facebook.com${ITEM_PATH(id)}`;
+const ITEM_PATH = (id: string) => `/api/marketplace/item/${id}`;
+const facebookUrl = (id: string) =>
+  `https://www.facebook.com/marketplace/item/${id}`;
 const projectUrl = (id: string) => `${HOST.replace(/\/$/, "")}${ITEM_PATH(id)}`;
 
 const jsonResponse = (body: unknown, status = 200) =>
@@ -74,7 +75,7 @@ const embedHtml = (listing: Listing) => {
 </html>`;
 };
 
-const app = new Hono();
+const app = new Hono().basePath("/api");
 
 app.get("/marketplace/item/:id", async (c) => {
   const { id } = c.req.param();
