@@ -122,10 +122,9 @@ app.get("/marketplace/item/:id/oembed", async (c) => {
 
   if (!listing) return jsonResponse({ error: "Not found" }, 404);
 
-  const pageUrl = projectUrl(listing.id);
   const body = {
     version: "1.0",
-    type: "rich",
+    type: "link",
     title: listing.title,
     author_name: oEmbedAuthorLine(listing),
     author_url: facebookUrl(listing.id),
