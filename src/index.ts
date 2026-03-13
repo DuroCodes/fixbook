@@ -196,7 +196,7 @@ app.post("/", async (c) => {
 
   try {
     await deleteExpiredListings();
-    await db.insert(listings).values({
+    const row = {
       id: data.id,
       title: data.title,
       price: data.price,
@@ -204,12 +204,29 @@ app.post("/", async (c) => {
       details: data.details,
       description: data.description,
       images: data.images,
-      authorName: data.authorName,
-      authorUrl: data.authorUrl,
-    });
+      ...(data.authorName && { authorName: data.authorName }),
+      ...(data.authorUrl && { authorUrl: data.authorUrl }),
+    };
+    await db
+      .insert(listings)
+      .values(row)
+      .onConflictDoUpdate({
+        target: listings.id,
+        set: {
+          title: row.title,
+          price: row.price,
+          listed: row.listed,
+          details: row.details,
+          description: row.description,
+          images: row.images,
+          ...(row.authorName != null && { authorName: row.authorName }),
+          ...(row.authorUrl != null && { authorUrl: row.authorUrl }),
+        },
+      });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Database error";
-    return jsonResponse({ error: message }, 500);
+    const detail = error instanceof Error ? error.message : String(error);
+    return jsonResponse({ error: message, detail }, 500);
   }
 
   return jsonResponse({ ok: true, id: data.id }, 201);
