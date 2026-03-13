@@ -10,6 +10,7 @@ const ITEM_PATH = (id: string) => `/api/marketplace/item/${id}`;
 const facebookUrl = (id: string) =>
   `https://www.facebook.com/marketplace/item/${id}`;
 const projectUrl = (id: string) => `${HOST.replace(/\/$/, "")}${ITEM_PATH(id)}`;
+const oEmbedUrl = (id: string) => `${projectUrl(id)}/oembed`;
 
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -22,16 +23,21 @@ const deleteExpiredListings = async () =>
     .delete(listings)
     .where(lt(listings.createdAt, sql`NOW() - INTERVAL '7 days'`));
 
+// Meta description is plain text only (og:description/twitter:description).
 const embedDescription = (listing: Listing) =>
   [
-    `<b>Price:</b> ${listing.price}`,
-    `<b>Listed:</b> ${listing.listed}`,
+    `Price: ${listing.price}`,
+    `Listed: ${listing.listed}`,
     ...(listing.details.length > 0
-      ? ["<b>Details:</b>", ...listing.details.map((d) => `- ${d}`)]
+      ? ["Details:", ...listing.details.map((d) => `- ${d}`)]
       : []),
     "Description:",
     listing.description,
-  ].join("<br>");
+  ].join(" ");
+
+// Key stats for oEmbed author_name (Discord shows this line in bold, like FixupX).
+const oEmbedAuthorLine = (listing: Listing) =>
+  `Price: ${listing.price} • Listed: ${listing.listed}`;
 
 const embedHtml = (listing: Listing) => {
   const pageUrl = projectUrl(listing.id);
@@ -65,6 +71,7 @@ const embedHtml = (listing: Listing) => {
   <meta name="twitter:title" content="${escapedTitle}">
   <meta name="twitter:description" content="${escapedDesc}">
   ${primaryImage ? `<meta name="twitter:image" content="${primaryImage.replace(/"/g, "&quot;")}">` : ""}
+  <link rel="alternate" type="application/json+oembed" href="${oEmbedUrl(listing.id).replace(/"/g, "&quot;")}" title="${escapedTitle}">
   <title>${escapedTitle}</title>
 </head>
 <body>
@@ -102,6 +109,30 @@ app.get("/marketplace/item/:id", async (c) => {
       Location: facebookUrl(listing.id),
     },
   });
+});
+
+app.get("/marketplace/item/:id/oembed", async (c) => {
+  const { id } = c.req.param();
+
+  const [listing] = await db
+    .select()
+    .from(listings)
+    .where(eq(listings.id, id))
+    .limit(1);
+
+  if (!listing) return jsonResponse({ error: "Not found" }, 404);
+
+  const pageUrl = projectUrl(listing.id);
+  const body = {
+    version: "1.0",
+    type: "rich",
+    title: listing.title,
+    author_name: oEmbedAuthorLine(listing),
+    author_url: facebookUrl(listing.id),
+    provider_name: "Fixbook",
+    provider_url: HOST.replace(/\/$/, ""),
+  };
+  return jsonResponse(body);
 });
 
 app.post("/", async (c) => {
