@@ -1,8 +1,8 @@
 import { eq } from "drizzle-orm";
 import { lt, sql } from "drizzle-orm";
 import { Hono } from "hono";
-import { listings, listingSchema, type Listing } from "./db/schema";
-import { db } from "./db/index";
+import { listings, listingSchema, type Listing } from "./db/schema.js";
+import { db } from "./db/index.js";
 
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 const HOST = process.env.FIXBOOK_HOST ?? `http://localhost:${PORT}`;
