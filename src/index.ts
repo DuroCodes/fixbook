@@ -17,6 +17,26 @@ const projectUrl = (id: string) => `${HOST.replace(/\/$/, "")}${ITEM_PATH(id)}`;
 const oEmbedUrl = (id: string) => `${projectUrl(id)}/oembed`;
 const BOT_UA_REGEX = /Discordbot|Slackbot|Twitterbot|facebookexternalhit/i;
 const MAX_DESCRIPTION_LENGTH = 200;
+const SMALL_TITLE_WORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "as",
+  "at",
+  "but",
+  "by",
+  "for",
+  "in",
+  "nor",
+  "of",
+  "on",
+  "or",
+  "the",
+  "to",
+  "up",
+  "vs",
+  "via",
+]);
 
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -46,6 +66,36 @@ const truncate = (value: string, maxLength: number) =>
   value.length <= maxLength
     ? value
     : `${value.slice(0, maxLength - 3).trimEnd()}...`;
+
+const capitalizeWord = (word: string) =>
+  word.replace(/[A-Za-z][A-Za-z']*/g, (part) => {
+    if (part.length <= 4 && part === part.toUpperCase()) return part;
+    return part[0].toUpperCase() + part.slice(1).toLowerCase();
+  });
+
+function formatDisplayTitle(title: string): string {
+  const cleaned = normalizeWhitespace(title);
+  const words = cleaned.match(/[A-Za-z][A-Za-z']*/g) ?? [];
+  if (words.length === 0) return cleaned;
+
+  const lowercaseStarts = words.filter(
+    (word) => word[0] === word[0].toLowerCase(),
+  ).length;
+  const shouldNormalize =
+    cleaned === cleaned.toLowerCase() ||
+    lowercaseStarts >= Math.ceil(words.length / 2);
+  if (!shouldNormalize) return cleaned;
+
+  return cleaned
+    .split(/\s+/)
+    .map((word, index, allWords) => {
+      const lower = word.toLowerCase();
+      const isBoundaryWord = index === 0 || index === allWords.length - 1;
+      if (SMALL_TITLE_WORDS.has(lower) && !isBoundaryWord) return lower;
+      return capitalizeWord(word);
+    })
+    .join(" ");
+}
 
 function parseListed(listed: string): { timeAgo: string; location?: string } {
   const cleaned = normalizeWhitespace(listed.replace(/^Listed\s+/i, ""));
@@ -208,7 +258,7 @@ app.get("/marketplace/item/:id/oembed", async (c) => {
     version: "1.0",
     type: "link",
     title: listingMetaLine(listing),
-    author_name: listing.title,
+    author_name: formatDisplayTitle(listing.title),
     author_url: facebookUrl(listing.id),
     provider_name: "Fixbook",
     provider_url: HOST.replace(/\/$/, ""),
