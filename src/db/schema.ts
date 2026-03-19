@@ -9,9 +9,10 @@ export const listings = pgTable("listings", {
   listed: text("listed").notNull(),
   details: text("details").array().notNull(),
   description: text("description").notNull(),
-  images: text("images").array().notNull().default(sql`'{}'::text[]`),
-  authorName: text("author_name"),
-  authorUrl: text("author_url"),
+  images: text("images")
+    .array()
+    .notNull()
+    .default(sql`'{}'::text[]`),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
@@ -28,8 +29,6 @@ export const listingSchema = z.object({
   details: z.array(z.string()),
   description: z.string().min(1),
   images: z.array(z.string().url()).default([]),
-  authorName: z.string().min(1).optional(),
-  authorUrl: z.url().optional(),
 });
 
 export type PostBody = z.infer<typeof listingSchema>;

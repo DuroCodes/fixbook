@@ -17,18 +17,7 @@ async function scrapeAndSendToDiscord() {
     let price = "Check Link";
     let location = "";
     let timeListed = "";
-    let condition = "";
     let details = [];
-    let authorName = "";
-    let authorUrl = "";
-
-    // --- Author (seller) --- e.g. "John Myers" with link to marketplace profile
-    const authorLink = document.querySelector('a[href*="/marketplace/profile/"]');
-    if (authorLink) {
-        authorName = (authorLink.getAttribute('aria-label') || authorLink.innerText || '').trim();
-        if (authorLink.href) authorUrl = authorLink.href;
-        if (authorName) debugInfo.push('Found author: ' + authorName);
-    }
 
     // --- STRATEGY: Relational & Heuristic ---
     // 1. Find the "Anchor" Media (Largest Image or Video on Page)
@@ -248,6 +237,32 @@ async function scrapeAndSendToDiscord() {
     images = [...new Set(images)].slice(0, 9);
     const itemUrl = window.location.href;
 
+    const formatListedText = (rawTimeListed, rawLocation) => {
+        const normalizedTime = rawTimeListed.trim();
+        const normalizedLocation = rawLocation.trim();
+
+        if (/^Listed\s+.+\s+in\s+.+$/i.test(normalizedTime)) {
+            return normalizedTime;
+        }
+
+        if (normalizedTime && normalizedLocation) {
+            const timeWithoutPrefix = normalizedTime.replace(/^Listed\s+/i, '').trim();
+            return `Listed ${timeWithoutPrefix} in ${normalizedLocation}`;
+        }
+
+        if (normalizedTime) {
+            return /^Listed\s+/i.test(normalizedTime)
+                ? normalizedTime
+                : `Listed ${normalizedTime}`;
+        }
+
+        if (normalizedLocation) {
+            return `Listed on Facebook Marketplace in ${normalizedLocation}`;
+        }
+
+        return "Listed on Facebook Marketplace";
+    };
+
     // Extract the Marketplace item ID from the URL
     const idMatch = itemUrl.match(/marketplace\/item\/(\d+)/);
     const id = idMatch?.[1];
@@ -262,13 +277,11 @@ async function scrapeAndSendToDiscord() {
         id,
         title,
         price,
-        listed: timeListed || "Listed on Facebook Marketplace",
+        listed: formatListedText(timeListed, location),
         details,
         description,
         images,
     };
-    if (authorName) payload.authorName = authorName;
-    if (authorUrl) payload.authorUrl = authorUrl;
 
     // Fallback clipboard approach using a temporary <textarea> so we don't depend
     // on navigator.clipboard (which can fail on some pages/contexts).
