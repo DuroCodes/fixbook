@@ -114,10 +114,11 @@ function listingMetaLine(listing: Listing): string {
 }
 
 const embedDescription = (listing: Listing) => {
+  const metaLine = listingMetaLine(listing);
   const cleanedDescription = cleanDescription(listing.description, listing);
   return cleanedDescription
-    ? truncate(cleanedDescription, MAX_DESCRIPTION_LENGTH)
-    : listingMetaLine(listing);
+    ? `${metaLine}\n${truncate(cleanedDescription, MAX_DESCRIPTION_LENGTH)}`
+    : metaLine;
 };
 
 const embedHtml = (listing: Listing) => {
@@ -207,9 +208,7 @@ app.get("/marketplace/item/:id/oembed", async (c) => {
   const body = {
     version: "1.0",
     type: "link",
-    title: listingMetaLine(listing),
-    author_name: listing.title,
-    author_url: facebookUrl(listing.id),
+    title: listing.title,
     provider_name: "Fixbook",
     provider_url: HOST.replace(/\/$/, ""),
   };
