@@ -16,6 +16,7 @@ const facebookUrl = (id: string) =>
 const projectUrl = (id: string) => `${HOST.replace(/\/$/, "")}${ITEM_PATH(id)}`;
 const oEmbedUrl = (id: string) => `${projectUrl(id)}/oembed`;
 const BOT_UA_REGEX = /Discordbot|Slackbot|Twitterbot|facebookexternalhit/i;
+const MAX_DESCRIPTION_LENGTH = 200;
 
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -93,8 +94,9 @@ function cleanDescription(description: string, listing: Listing): string {
   out = out
     .replace(/\bLocation is approximate\b/gi, " ")
     .replace(/\bSend seller a message\b/gi, " ")
-    .replace(/\bIs this available\b\??/gi, " ")
     .replace(/\bSeller's description\b/gi, " ");
+
+  out = out.replace(/\s*(See more|See less)\s*$/gi, " ");
 
   return normalizeWhitespace(out);
 }
@@ -108,12 +110,14 @@ function listingMetaLine(listing: Listing): string {
     ...(location ? [`📍 ${location}`] : []),
     ...(details ? [`🏷️ ${details}`] : []),
   ];
-  return truncate(parts.join("   "), 255);
+  return truncate(parts.join(" • "), 255);
 }
 
 const embedDescription = (listing: Listing) => {
   const cleanedDescription = cleanDescription(listing.description, listing);
-  return cleanedDescription || listingMetaLine(listing);
+  return cleanedDescription
+    ? truncate(cleanedDescription, MAX_DESCRIPTION_LENGTH)
+    : listingMetaLine(listing);
 };
 
 const embedHtml = (listing: Listing) => {

@@ -18,6 +18,23 @@ async function scrapeAndSendToDiscord() {
     let location = "";
     let timeListed = "";
     let details = [];
+    const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+    const expandCollapsedText = async (root) => {
+        const expanders = Array.from(
+            root.querySelectorAll('button, [role="button"]')
+        ).filter((element) => {
+            const text = (element.innerText || element.getAttribute('aria-label') || '').trim();
+            return /^See more$/i.test(text);
+        });
+
+        if (expanders.length === 0) return;
+
+        for (const expander of expanders) {
+            expander.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        }
+
+        await wait(150);
+    };
 
     // --- STRATEGY: Relational & Heuristic ---
     // 1. Find the "Anchor" Media (Largest Image or Video on Page)
@@ -198,6 +215,7 @@ async function scrapeAndSendToDiscord() {
 
                     if (bestDescChild) {
                         debugInfo.push("Found Description Container");
+                        await expandCollapsedText(bestDescChild);
 
                         // Drill down to isolate the description from "See less" / Maps
                         // The container often includes the toggle button and location info.
@@ -216,8 +234,9 @@ async function scrapeAndSendToDiscord() {
                                 break;
                             }
                         }
-                        // Clean up "See less" artifact
-                        description = descNode.innerText.replace(/\s*See less[\s\S]*/i, '').trim();
+                        description = descNode.innerText
+                            .replace(/\s*(See more|See less)\s*$/i, '')
+                            .trim();
                     }
                 } else {
                     debugInfo.push("divTEXT not found (Step 5)");
