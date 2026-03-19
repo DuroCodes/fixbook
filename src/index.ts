@@ -124,7 +124,7 @@ const embedHtml = (listing: Listing) => {
   const pageUrl = projectUrl(listing.id);
   const redirectUrl = facebookUrl(listing.id);
   const desc = embedDescription(listing);
-  const escapedTitle = escapeHtmlAttr(listing.title);
+  const escapedTitle = escapeHtmlAttr(listingMetaLine(listing));
   const escapedDesc = escapeHtmlAttr(desc);
   const primaryImage = listing.images?.at(0);
   const hasImage = !!primaryImage;
@@ -207,8 +207,8 @@ app.get("/marketplace/item/:id/oembed", async (c) => {
   const body = {
     version: "1.0",
     type: "link",
-    title: listing.title,
-    author_name: listingMetaLine(listing),
+    title: listingMetaLine(listing),
+    author_name: listing.title,
     author_url: facebookUrl(listing.id),
     provider_name: "Fixbook",
     provider_url: HOST.replace(/\/$/, ""),
