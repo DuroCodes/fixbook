@@ -17,27 +17,6 @@ const projectUrl = (id: string) => `${HOST.replace(/\/$/, "")}${ITEM_PATH(id)}`;
 const oEmbedUrl = (id: string) => `${projectUrl(id)}/oembed`;
 const BOT_UA_REGEX = /Discordbot|Slackbot|Twitterbot|facebookexternalhit/i;
 const MAX_DESCRIPTION_LENGTH = 200;
-const MAX_OEMBED_TITLE_LENGTH = 110;
-const SMALL_TITLE_WORDS = new Set([
-  "a",
-  "an",
-  "and",
-  "as",
-  "at",
-  "but",
-  "by",
-  "for",
-  "in",
-  "nor",
-  "of",
-  "on",
-  "or",
-  "the",
-  "to",
-  "up",
-  "vs",
-  "via",
-]);
 
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -68,36 +47,6 @@ const truncate = (value: string, maxLength: number) =>
     ? value
     : `${value.slice(0, maxLength - 3).trimEnd()}...`;
 
-const capitalizeWord = (word: string) =>
-  word.replace(/[A-Za-z][A-Za-z']*/g, (part) => {
-    if (part.length <= 4 && part === part.toUpperCase()) return part;
-    return part[0].toUpperCase() + part.slice(1).toLowerCase();
-  });
-
-function formatDisplayTitle(title: string): string {
-  const cleaned = normalizeWhitespace(title);
-  const words = cleaned.match(/[A-Za-z][A-Za-z']*/g) ?? [];
-  if (words.length === 0) return cleaned;
-
-  const lowercaseStarts = words.filter(
-    (word) => word[0] === word[0].toLowerCase(),
-  ).length;
-  const shouldNormalize =
-    cleaned === cleaned.toLowerCase() ||
-    lowercaseStarts >= Math.ceil(words.length / 2);
-  if (!shouldNormalize) return cleaned;
-
-  return cleaned
-    .split(/\s+/)
-    .map((word, index, allWords) => {
-      const lower = word.toLowerCase();
-      const isBoundaryWord = index === 0 || index === allWords.length - 1;
-      if (SMALL_TITLE_WORDS.has(lower) && !isBoundaryWord) return lower;
-      return capitalizeWord(word);
-    })
-    .join(" ");
-}
-
 function parseListed(listed: string): { timeAgo: string; location?: string } {
   const cleaned = normalizeWhitespace(listed.replace(/^Listed\s+/i, ""));
   const inMatch = cleaned.match(/^(.+?)\s+in\s+(.+)$/i);
@@ -115,7 +64,7 @@ function parseListed(listed: string): { timeAgo: string; location?: string } {
   return { timeAgo: cleaned || "Listed on Facebook Marketplace" };
 }
 
-function summarizeDetails(details: string[], maxValues = 5): string {
+function summarizeDetails(details: string[]): string {
   if (details.length === 0) return "";
   const values = details
     .flatMap((detail) =>
@@ -128,7 +77,7 @@ function summarizeDetails(details: string[], maxValues = 5): string {
         ),
     )
     .filter(Boolean);
-  return values.slice(0, maxValues).join(" / ");
+  return values.slice(0, 5).join(" / ");
 }
 
 function cleanDescription(description: string, listing: Listing): string {
@@ -153,33 +102,15 @@ function cleanDescription(description: string, listing: Listing): string {
 }
 
 function listingMetaLine(listing: Listing): string {
-  const { timeAgo, location } = parseListed(listing.listed);
-  const details = summarizeDetails(listing.details, 3);
-  const coreParts = [
+  const { location } = parseListed(listing.listed);
+  const details = summarizeDetails(listing.details);
+  const parts = [
     `💵 ${listing.price}`,
+    // `📅 ${timeAgo}`,
     ...(location ? [`📍 ${location}`] : []),
     ...(details ? [`🏷️ ${details}`] : []),
   ];
-  const extendedParts = [
-    coreParts[0],
-    ...(timeAgo ? [`📅 ${timeAgo}`] : []),
-    ...coreParts.slice(1),
-  ];
-
-  const compact = coreParts.join(" • ");
-  const full = extendedParts.join(" • ");
-
-  if (full.length <= MAX_OEMBED_TITLE_LENGTH) return full;
-  if (compact.length <= MAX_OEMBED_TITLE_LENGTH) return compact;
-
-  const reducedDetails = summarizeDetails(listing.details, 2);
-  const reduced = [
-    `💵 ${listing.price}`,
-    ...(location ? [`📍 ${location}`] : []),
-    ...(reducedDetails ? [`🏷️ ${reducedDetails}`] : []),
-  ].join(" • ");
-
-  return truncate(reduced || `💵 ${listing.price}`, MAX_OEMBED_TITLE_LENGTH);
+  return truncate(parts.join(" • "), 255);
 }
 
 const embedDescription = (listing: Listing) => {
@@ -193,7 +124,7 @@ const embedHtml = (listing: Listing) => {
   const pageUrl = projectUrl(listing.id);
   const redirectUrl = facebookUrl(listing.id);
   const desc = embedDescription(listing);
-  const escapedTitle = escapeHtmlAttr(formatDisplayTitle(listing.title));
+  const escapedTitle = escapeHtmlAttr(listingMetaLine(listing));
   const escapedDesc = escapeHtmlAttr(desc);
   const primaryImage = listing.images?.at(0);
   const hasImage = !!primaryImage;
@@ -277,7 +208,7 @@ app.get("/marketplace/item/:id/oembed", async (c) => {
     version: "1.0",
     type: "link",
     title: listingMetaLine(listing),
-    author_name: formatDisplayTitle(listing.title),
+    author_name: listing.title,
     author_url: facebookUrl(listing.id),
     provider_name: "Fixbook",
     provider_url: HOST.replace(/\/$/, ""),
