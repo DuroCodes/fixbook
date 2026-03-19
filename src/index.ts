@@ -207,8 +207,8 @@ app.get("/marketplace/item/:id/oembed", async (c) => {
   const body = {
     version: "1.0",
     type: "link",
-    title: listing.title,
-    author_name: listingMetaLine(listing),
+    title: listingMetaLine(listing),
+    author_name: listing.title,
     author_url: facebookUrl(listing.id),
     provider_name: "Fixbook",
     provider_url: HOST.replace(/\/$/, ""),
