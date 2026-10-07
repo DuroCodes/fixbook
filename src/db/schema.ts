@@ -19,7 +19,6 @@ export const listings = pgTable("listings", {
 });
 
 export type Listing = typeof listings.$inferSelect;
-export type NewListing = typeof listings.$inferInsert;
 
 export const listingSchema = z.object({
   id: z.string().min(1),
@@ -30,5 +29,3 @@ export const listingSchema = z.object({
   description: z.string().min(1),
   images: z.array(z.string().url()).default([]),
 });
-
-export type PostBody = z.infer<typeof listingSchema>;

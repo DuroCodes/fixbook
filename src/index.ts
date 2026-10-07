@@ -1,216 +1,164 @@
-import { eq } from "drizzle-orm";
-import { lt, sql } from "drizzle-orm";
+import { eq, lt, sql } from "drizzle-orm";
 import { Hono } from "hono";
-import { listings, listingSchema, type Listing } from "./db/schema.js";
 import { db } from "./db/index.js";
+import { listingSchema, listings, type Listing } from "./db/schema.js";
 
-const PORT = parseInt(process.env.PORT ?? "3000", 10);
-const HOST =
-  process.env.FIXBOOK_HOST ??
-  (process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : `http://localhost:${PORT}`);
-const ITEM_PATH = (id: string) => `/marketplace/item/${id}`;
+const BOT_UA = /Discordbot|Slackbot|Twitterbot|facebookexternalhit/i;
+const MAX_EMBED_BYTES = 3000;
+const ACCENT = 0x0866ff;
+
 const facebookUrl = (id: string) =>
   `https://www.facebook.com/marketplace/item/${id}`;
-const projectUrl = (id: string) => `${HOST.replace(/\/$/, "")}${ITEM_PATH(id)}`;
-const oEmbedUrl = (id: string) => `${projectUrl(id)}/oembed`;
-const BOT_UA_REGEX = /Discordbot|Slackbot|Twitterbot|facebookexternalhit/i;
-const MAX_DESCRIPTION_LENGTH = 200;
-const SMALL_TITLE_WORDS = new Set([
-  "a",
-  "an",
-  "and",
-  "as",
-  "at",
-  "but",
-  "by",
-  "for",
-  "in",
-  "nor",
-  "of",
-  "on",
-  "or",
-  "the",
-  "to",
-  "up",
-  "vs",
-  "via",
-]);
 
-const jsonResponse = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
+const bytes = (value: string) => new TextEncoder().encode(value).length;
 
-const deleteExpiredListings = async () =>
-  await db
-    .delete(listings)
-    .where(lt(listings.createdAt, sql`NOW() - INTERVAL '7 days'`));
-
-const escapeHtmlAttr = (value: string) =>
+const escapeHtml = (value: string) =>
   value
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+    .replaceAll("&", "&amp;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 
-const escapeRegex = (value: string) =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const oneLine = (value: string) => value.replace(/\s+/g, " ").trim();
 
-const normalizeWhitespace = (value: string) =>
-  value.replace(/\s+/g, " ").trim();
+const blank = (value: string) =>
+  !value || value === "Check Link" || value === "No description available."
+    ? ""
+    : value.trim();
 
-const truncate = (value: string, maxLength: number) =>
-  value.length <= maxLength
-    ? value
-    : `${value.slice(0, maxLength - 3).trimEnd()}...`;
+const mdLabel = (value: string) =>
+  oneLine(value.replaceAll(/[\[\]*]/g, "")).slice(0, 120) || "Marketplace listing";
 
-const capitalizeWord = (word: string) =>
-  word.replace(/[A-Za-z][A-Za-z']*/g, (part) => {
-    if (part.length <= 4 && part === part.toUpperCase()) return part;
-    return part[0].toUpperCase() + part.slice(1).toLowerCase();
-  });
-
-function formatDisplayTitle(title: string): string {
-  const cleaned = normalizeWhitespace(title);
-  const words = cleaned.match(/[A-Za-z][A-Za-z']*/g) ?? [];
-  if (words.length === 0) return cleaned;
-
-  const lowercaseStarts = words.filter(
-    (word) => word[0] === word[0].toLowerCase(),
-  ).length;
-  const shouldNormalize =
-    cleaned === cleaned.toLowerCase() ||
-    lowercaseStarts >= Math.ceil(words.length / 2);
-  if (!shouldNormalize) return cleaned;
-
-  return cleaned
-    .split(/\s+/)
-    .map((word, index, allWords) => {
-      const lower = word.toLowerCase();
-      const isBoundaryWord = index === 0 || index === allWords.length - 1;
-      if (SMALL_TITLE_WORDS.has(lower) && !isBoundaryWord) return lower;
-      return capitalizeWord(word);
-    })
-    .join(" ");
-}
-
-function parseListed(listed: string): { timeAgo: string; location?: string } {
-  const cleaned = normalizeWhitespace(listed.replace(/^Listed\s+/i, ""));
+const locationOf = (listed: string) => {
+  const cleaned = oneLine(listed.replace(/^Listed\s+/i, ""));
   const inMatch = cleaned.match(/^(.+?)\s+in\s+(.+)$/i);
-  if (inMatch)
-    return { timeAgo: inMatch[1].trim(), location: inMatch[2].trim() };
+  if (inMatch) return inMatch[2].trim();
 
   const parts = cleaned
     .split(/\s+[·•|]\s+/)
     .map((part) => part.trim())
     .filter(Boolean);
-  if (parts.length > 1) {
-    return { timeAgo: parts[0], location: parts.slice(1).join(" / ") };
-  }
-
-  return { timeAgo: cleaned || "Listed on Facebook Marketplace" };
-}
-
-function summarizeDetails(details: string[]): string {
-  if (details.length === 0) return "";
-  const values = details
-    .flatMap((detail) =>
-      detail
-        .split(" · ")
-        .map((part) =>
-          part.includes(":")
-            ? part.replace(/^[^:]+:\s*/, "").trim()
-            : part.trim(),
-        ),
-    )
-    .filter(Boolean);
-  return values.slice(0, 5).join(" / ");
-}
-
-function cleanDescription(description: string, listing: Listing): string {
-  let out = description;
-
-  out = out.replace(new RegExp(escapeRegex(listing.price), "gi"), " ");
-  out = out.replace(new RegExp(escapeRegex(listing.listed), "gi"), " ");
-
-  const { location } = parseListed(listing.listed);
-  if (location) {
-    out = out.replace(new RegExp(escapeRegex(location), "gi"), " ");
-  }
-
-  out = out
-    .replace(/\bLocation is approximate\b/gi, " ")
-    .replace(/\bSend seller a message\b/gi, " ")
-    .replace(/\bSeller's description\b/gi, " ");
-
-  out = out.replace(/\s*(See more|See less)\s*$/gi, " ");
-
-  return normalizeWhitespace(out);
-}
-
-function listingMetaLine(listing: Listing): string {
-  const { location } = parseListed(listing.listed);
-  const details = summarizeDetails(listing.details);
-  const parts = [
-    `💵 ${listing.price}`,
-    // `📅 ${timeAgo}`,
-    ...(location ? [`📍 ${location}`] : []),
-    ...(details ? [`🏷️ ${details}`] : []),
-  ];
-  return truncate(parts.join(" • "), 255);
-}
-
-const embedDescription = (listing: Listing) => {
-  const cleanedDescription = cleanDescription(listing.description, listing);
-  return cleanedDescription
-    ? truncate(cleanedDescription, MAX_DESCRIPTION_LENGTH)
-    : listingMetaLine(listing);
+  return parts.length > 1 ? parts.slice(1).join(" · ") : "";
 };
 
-const embedHtml = (listing: Listing) => {
-  const pageUrl = projectUrl(listing.id);
-  const redirectUrl = facebookUrl(listing.id);
-  const desc = embedDescription(listing);
-  const escapedTitle = escapeHtmlAttr(listingMetaLine(listing));
-  const escapedDesc = escapeHtmlAttr(desc);
-  const primaryImage = listing.images?.at(0);
-  const hasImage = !!primaryImage;
+const cleanDescription = (listing: Listing) => {
+  const location = locationOf(listing.listed);
+  let text = listing.description;
+  for (const part of [listing.price, listing.listed, location]) {
+    if (part) text = text.replaceAll(part, " ");
+  }
 
-  const imageMetas = primaryImage
-    ? listing.images
-        .map(
-          (url) =>
-            `<meta property="og:image" content="${escapeHtmlAttr(url)}">`,
-        )
-        .join("\n  ")
+  return text
+    .replace(/\b(Location is approximate|Send seller a message|Seller's description)\b/gi, " ")
+    .replace(/\s*(See more|See less)\s*$/i, "")
+    .replace(/^#{1,3}\s*/gm, "")
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+};
+
+const galleryImages = (urls: string[]) =>
+  urls
+    .filter(
+      (url) =>
+        url.length <= 2048 &&
+        /^https:\/\/.+\.(png|gif|jpe?g|webp|avif)(\?|#|$)/i.test(url),
+    )
+    .slice(0, 10);
+
+const headerText = (listing: Listing) => {
+  const price = blank(listing.price);
+  const location = locationOf(listing.listed);
+  const specs = listing.details
+    .map(oneLine)
+    .filter((detail) => detail.length > 1 && detail.length < 80)
+    .slice(0, 4);
+  const priceLine = [price && `**${price}**`, location].filter(Boolean).join(" · ");
+
+  return [
+    `# **[${mdLabel(listing.title)}](${facebookUrl(listing.id)})**`,
+    priceLine,
+    ...specs,
+  ]
+    .filter(Boolean)
+    .join("\n");
+};
+
+const embedDocument = (listing: Listing, description: string, images: string[]) => ({
+  component: {
+    type: 17,
+    accent_color: ACCENT,
+    components: [
+      { type: 10, content: headerText(listing) },
+      ...(images.length
+        ? [{ type: 12, items: images.map((url) => ({ media: { url } })) }]
+        : []),
+      ...(description ? [{ type: 10, content: description }] : []),
+      { type: 14, spacing: 1 },
+      {
+        type: 1,
+        components: [
+          {
+            type: 2,
+            style: 5,
+            label: "View listing",
+            url: facebookUrl(listing.id),
+          },
+        ],
+      },
+    ],
+  },
+});
+
+const serializeEmbed = (listing: Listing, description: string, images: string[]) =>
+  JSON.stringify(embedDocument(listing, description, images)).replaceAll("<", "\\u003c");
+
+const componentEmbed = (listing: Listing) => {
+  let images = galleryImages(listing.images ?? []);
+  let description = blank(listing.description)
+    ? cleanDescription(listing).slice(0, 400)
     : "";
+
+  const size = () => bytes(serializeEmbed(listing, description, images));
+
+  while (size() > MAX_EMBED_BYTES && images.length) images = images.slice(0, -1);
+  while (size() > MAX_EMBED_BYTES && description) {
+    const next = description
+      .slice(0, Math.max(0, description.length - 40))
+      .replace(/\s+\S*$/, "")
+      .trimEnd();
+    description = next.length < description.length ? next : "";
+  }
+
+  const json = serializeEmbed(listing, description, images);
+  return bytes(json) <= MAX_EMBED_BYTES ? json : "";
+};
+
+const embedHtml = (listing: Listing, pageUrl: string) => {
+  const title = oneLine(listing.title);
+  const description = [blank(listing.price), locationOf(listing.listed), oneLine(cleanDescription(listing))]
+    .filter(Boolean)
+    .join(" · ")
+    .slice(0, 200);
+  const images = (listing.images ?? []).filter((url) => url.startsWith("https://")).slice(0, 4);
+  const payload = componentEmbed(listing);
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="refresh" content="0;url=${redirectUrl}">
+  <title>${escapeHtml(title)}</title>
   <meta property="og:type" content="website">
-  <meta property="og:site_name" content="Fixbook">
-  <meta property="og:title" content="${escapedTitle}">
-  <meta property="og:description" content="${escapedDesc}">
-  <meta property="og:url" content="${pageUrl}">
-  ${imageMetas}
-  <meta name="twitter:card" content="${hasImage ? "summary_large_image" : "summary"}">
-  <meta name="twitter:title" content="${escapedTitle}">
-  <meta name="twitter:description" content="${escapedDesc}">
-  ${primaryImage ? `<meta name="twitter:image" content="${escapeHtmlAttr(primaryImage)}">` : ""}
-  <link rel="alternate" type="application/json+oembed" href="${escapeHtmlAttr(oEmbedUrl(listing.id))}" title="${escapedTitle}">
-  <title>${escapedTitle}</title>
+  <meta property="og:title" content="${escapeHtml(title)}">
+  <meta property="og:description" content="${escapeHtml(description)}">
+  <meta property="og:url" content="${escapeHtml(pageUrl)}">
+  ${images.map((url) => `<meta property="og:image" content="${escapeHtml(url)}">`).join("\n  ")}
+  <meta name="twitter:card" content="${images.length ? "summary_large_image" : "summary"}">
+  ${payload ? `<script id="discord:component-embed" type="application/json">${payload}</script>` : ""}
+  <meta http-equiv="refresh" content="0;url=${escapeHtml(facebookUrl(listing.id))}">
 </head>
-<body>
-  <script>
-    window.location.replace(${JSON.stringify(redirectUrl)});
-  </script>
-</body>
+<body></body>
 </html>`;
 };
 
@@ -218,99 +166,41 @@ const app = new Hono();
 
 app.get("/marketplace/item/:id", async (c) => {
   const { id } = c.req.param();
+  const [listing] = await db.select().from(listings).where(eq(listings.id, id)).limit(1);
+  if (!listing) return c.json({ error: "Not found" }, 404);
 
-  const [listing] = await db
-    .select()
-    .from(listings)
-    .where(eq(listings.id, id))
-    .limit(1);
+  if (!BOT_UA.test(c.req.header("user-agent") ?? "")) {
+    return c.redirect(facebookUrl(id), 301);
+  }
 
-  if (!listing) return jsonResponse({ error: "Not found" }, 404);
-
-  const ua = c.req.header("user-agent") ?? "";
-  const isBot = BOT_UA_REGEX.test(ua);
-
-  if (isBot)
-    return new Response(embedHtml(listing), {
-      headers: { "Content-Type": "text/html; charset=utf-8" },
-    });
-
-  return new Response(null, {
-    status: 301,
-    headers: {
-      Location: facebookUrl(listing.id),
-    },
-  });
-});
-
-app.get("/marketplace/item/:id/oembed", async (c) => {
-  const { id } = c.req.param();
-
-  const [listing] = await db
-    .select()
-    .from(listings)
-    .where(eq(listings.id, id))
-    .limit(1);
-
-  if (!listing) return jsonResponse({ error: "Not found" }, 404);
-
-  const body = {
-    version: "1.0",
-    type: "link",
-    title: listingMetaLine(listing),
-    author_name: formatDisplayTitle(listing.title),
-    author_url: facebookUrl(listing.id),
-    provider_name: "Fixbook",
-    provider_url: HOST.replace(/\/$/, ""),
-  };
-  return jsonResponse(body);
+  return c.html(embedHtml(listing, new URL(`/marketplace/item/${id}`, c.req.url).href));
 });
 
 app.post("/", async (c) => {
-  const json: unknown = await c.req.json();
-
-  const { data, success, error } = listingSchema.safeParse(json);
-  if (!success)
-    return jsonResponse(
-      {
-        error: "Validation failed",
-        issues: error.flatten(),
-      },
-      400,
-    );
-
+  let body: unknown;
   try {
-    await deleteExpiredListings();
-    const row = {
-      id: data.id,
-      title: data.title,
-      price: data.price,
-      listed: data.listed,
-      details: data.details,
-      description: data.description,
-      images: data.images,
-    };
-    await db
-      .insert(listings)
-      .values(row)
-      .onConflictDoUpdate({
-        target: listings.id,
-        set: {
-          title: row.title,
-          price: row.price,
-          listed: row.listed,
-          details: row.details,
-          description: row.description,
-          images: row.images,
-        },
-      });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Database error";
-    const detail = error instanceof Error ? error.message : String(error);
-    return jsonResponse({ error: message, detail }, 500);
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Invalid JSON" }, 400);
   }
 
-  return jsonResponse({ ok: true, id: data.id }, 201);
+  const parsed = listingSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: "Validation failed", issues: parsed.error.flatten() }, 400);
+  }
+
+  try {
+    await db.delete(listings).where(lt(listings.createdAt, sql`NOW() - INTERVAL '7 days'`));
+    await db.insert(listings).values(parsed.data).onConflictDoUpdate({
+      target: listings.id,
+      set: parsed.data,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Database error";
+    return c.json({ error: message }, 500);
+  }
+
+  return c.json({ ok: true, id: parsed.data.id }, 201);
 });
 
 export default app;
