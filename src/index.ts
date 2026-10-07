@@ -116,6 +116,7 @@ const specLabel = (detail: string) =>
     .replace(/^fuel type:\s*/i, "")
     .replace(/^engine size:\s*-?\s*/i, "")
     .replace(/^horsepower:\s*/i, "")
+    .replace(/^condition:\s*/i, "")
     .replace(/\s+transmission$/i, "")
     .replace(/^-+\s*/, "");
 
@@ -317,7 +318,7 @@ app.post("/", async (c) => {
   try {
     await db
       .delete(listings)
-      .where(lt(listings.createdAt, sql`NOW() - INTERVAL '7 days'`));
+      .where(lt(listings.createdAt, sql`NOW() - INTERVAL '1 month'`));
     await db.insert(listings).values(parsed.data).onConflictDoUpdate({
       target: listings.id,
       set: parsed.data,
