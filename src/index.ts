@@ -2,6 +2,7 @@ import { eq, lt, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { db } from "./db/index.js";
 import { listingSchema, listings, type Listing } from "./db/schema.js";
+import { embedHtml, homeHtml } from "./pages/html.js";
 
 const BOT_UA = /Discordbot|Slackbot|Twitterbot|facebookexternalhit/i;
 const MAX_EMBED_BYTES = 3000;
@@ -51,12 +52,14 @@ const locationOf = (listed: string) => {
     .split(/\s+[·•|]\s+/)
     .map((part) => part.trim())
     .filter(Boolean);
+
   return parts.length > 1 ? parts.slice(1).join(" · ") : "";
 };
 
 const cleanDescription = (listing: Listing) => {
   const location = locationOf(listing.listed);
   let text = listing.description;
+
   for (const part of [listing.price, listing.listed, location]) {
     if (part) text = text.replaceAll(part, " ");
   }
@@ -130,10 +133,12 @@ const specLines = (details: string[]) => {
       const label = specLabel(detail);
       return icon ? `${icon} ${label}` : label;
     });
+
   const lines = [];
   for (let index = 0; index < specs.length; index += 2) {
     lines.push(specs.slice(index, index + 2).join(" · "));
   }
+
   return lines;
 };
 
@@ -145,6 +150,7 @@ const shorten = (value: string, limit: number) => {
     .slice(0, limit - 1)
     .replace(/\s+\S*$/, "")
     .trimEnd();
+
   const kept = cut || text.slice(0, limit - 1).trimEnd();
   return kept ? `${kept}…` : "";
 };
@@ -163,6 +169,7 @@ const tidyDescription = (listing: Listing) => {
         !/^ad$/i.test(line) &&
         !/^located in$/i.test(line),
     );
+
   const clipped = lines.slice(0, 6).join("\n");
   const text = shorten(clipped, 320);
   return lines.length > 6 && !text.endsWith("…") ? `${text}…` : text;
@@ -237,6 +244,7 @@ const componentEmbed = (listing: Listing) => {
 
   while (size() > MAX_EMBED_BYTES && images.length)
     images = images.slice(0, -1);
+
   while (size() > MAX_EMBED_BYTES && description) {
     const next = shorten(description, description.length - 40);
     description = next.length < description.length ? next : "";
@@ -246,7 +254,7 @@ const componentEmbed = (listing: Listing) => {
   return bytes(json) <= MAX_EMBED_BYTES ? json : "";
 };
 
-const embedHtml = (listing: Listing, pageUrl: string) => {
+const listingHtml = (listing: Listing, pageUrl: string) => {
   const title = cleanTitle(listing.title);
   const description = shorten(
     [
@@ -261,25 +269,24 @@ const embedHtml = (listing: Listing, pageUrl: string) => {
   const images = (listing.images ?? []).filter(usableImage).slice(0, 4);
   const payload = componentEmbed(listing);
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>${escapeHtml(title)}</title>
-  <meta property="og:type" content="website">
-  <meta property="og:title" content="${escapeHtml(title)}">
-  <meta property="og:description" content="${escapeHtml(description)}">
-  <meta property="og:url" content="${escapeHtml(pageUrl)}">
-  ${images.map((url) => `<meta property="og:image" content="${escapeHtml(url)}">`).join("\n  ")}
-  <meta name="twitter:card" content="${images.length ? "summary_large_image" : "summary"}">
-  ${payload ? `<script id="discord:component-embed" type="application/json">${payload}</script>` : ""}
-  <meta http-equiv="refresh" content="0;url=${escapeHtml(facebookUrl(listing.id))}">
-</head>
-<body></body>
-</html>`;
+  return embedHtml({
+    title: escapeHtml(title),
+    description: escapeHtml(description),
+    url: escapeHtml(pageUrl),
+    images: images
+      .map((url) => `<meta property="og:image" content="${escapeHtml(url)}">`)
+      .join("\n  "),
+    card: images.length ? "summary_large_image" : "summary",
+    script: payload
+      ? `<script id="discord:component-embed" type="application/json">${payload}</script>`
+      : "",
+    redirect: escapeHtml(facebookUrl(listing.id)),
+  });
 };
 
 const app = new Hono();
+
+app.get("/", (c) => c.html(homeHtml()));
 
 app.get("/marketplace/item/:id", async (c) => {
   const { id } = c.req.param();
@@ -288,6 +295,7 @@ app.get("/marketplace/item/:id", async (c) => {
     .from(listings)
     .where(eq(listings.id, id))
     .limit(1);
+
   if (!listing) return c.json({ error: "Not found" }, 404);
 
   if (!BOT_UA.test(c.req.header("user-agent") ?? "")) {
@@ -295,12 +303,13 @@ app.get("/marketplace/item/:id", async (c) => {
   }
 
   return c.html(
-    embedHtml(listing, new URL(`/marketplace/item/${id}`, c.req.url).href),
+    listingHtml(listing, new URL(`/marketplace/item/${id}`, c.req.url).href),
   );
 });
 
 app.post("/", async (c) => {
   let body: unknown;
+
   try {
     body = await c.req.json();
   } catch {
@@ -319,6 +328,7 @@ app.post("/", async (c) => {
     await db
       .delete(listings)
       .where(lt(listings.createdAt, sql`NOW() - INTERVAL '1 month'`));
+
     await db.insert(listings).values(parsed.data).onConflictDoUpdate({
       target: listings.id,
       set: parsed.data,

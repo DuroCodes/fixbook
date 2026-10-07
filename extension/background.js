@@ -32,9 +32,11 @@ const scrapeListing = async () => {
         node && node !== document.body && depth < 25;
         depth++
       ) {
-        const vehicle = /about this (vehicle|item|home)|seller's description/i.test(
-          node.innerText || "",
-        );
+        const vehicle =
+          /about this (vehicle|item|home)|seller's description/i.test(
+            node.innerText || "",
+          );
+
         const item = [...node.querySelectorAll("h2")].some((heading) =>
           /^details$/i.test(text(heading)),
         );
@@ -53,6 +55,7 @@ const scrapeListing = async () => {
 
   const root =
     panel?.root || document.querySelector('[role="main"]') || document.body;
+
   const title = cleanTitle(text(panel?.el)) || cleanTitle(document.title);
   const lines = (root.innerText || "")
     .split("\n")
@@ -79,6 +82,7 @@ const scrapeListing = async () => {
 
   let price = "";
   let priceNode = panel?.el?.parentElement;
+
   while (priceNode && priceNode !== root.parentElement) {
     const matches = text(priceNode).match(
       /(?:CA|US|AU|NZ)?\s?[$£€]\s?[\d,]+(?:\.\d{2})?|\bFree\b/gi,
@@ -95,6 +99,7 @@ const scrapeListing = async () => {
 
   const sectionNode = (heading, stop) => {
     let node = heading;
+
     while (node?.parentElement && node.parentElement !== document.body) {
       const parent = node.parentElement;
       if (
@@ -121,6 +126,7 @@ const scrapeListing = async () => {
   const labelsUnder = (heading, stop) => {
     let node = heading?.parentElement;
     let labels = [];
+
     while (node && node !== document.body) {
       if (
         [...node.querySelectorAll("h2")].some(
@@ -159,9 +165,10 @@ const scrapeListing = async () => {
 
   const itemDetail = (label) => {
     const node = sectionNode(detailsHeading, stop);
-    const spans = [...(node?.querySelectorAll("span[dir='auto']") || [])].filter(
-      (el) => !detailsHeading.contains(el) && !el.querySelector("span"),
-    );
+    const spans = [
+      ...(node?.querySelectorAll("span[dir='auto']") || []),
+    ].filter((el) => !detailsHeading.contains(el) && !el.querySelector("span"));
+
     const index = spans.findIndex((el) => text(el).toLowerCase() === label);
     const value = index >= 0 ? text(spans[index + 1]) : "";
     return value && value.length < 80 ? `${label}: ${value}` : "";
@@ -169,12 +176,14 @@ const scrapeListing = async () => {
 
   const blurb = () => {
     const node = sectionNode(detailsHeading, stop);
-    const spans = [...(node?.querySelectorAll("span[dir='auto']") || [])].filter(
-      (el) => !detailsHeading.contains(el),
-    );
+    const spans = [
+      ...(node?.querySelectorAll("span[dir='auto']") || []),
+    ].filter((el) => !detailsHeading.contains(el));
+
     const broken = spans
       .filter((el) => (el.innerText || "").includes("\n"))
       .sort((a, b) => a.innerText.length - b.innerText.length);
+
     const span =
       broken[0] ||
       spans
@@ -191,14 +200,12 @@ const scrapeListing = async () => {
     ? labelsUnder(about, /seller/i)
     : [itemDetail("condition")].filter(Boolean);
 
-  const description = seller
-    ? sectionText(seller, stop)
-    : blurb();
+  const description = seller ? sectionText(seller, stop) : blurb();
 
   let imageRoot = root;
+
   for (let depth = 0; depth < 8 && imageRoot.parentElement; depth++) {
     if (imageRoot.querySelector("img[alt*='Product photo' i]")) break;
-
     imageRoot = imageRoot.parentElement;
   }
 
@@ -215,6 +222,7 @@ const scrapeListing = async () => {
   ].slice(0, 4);
 
   const id = window.location.href.match(/marketplace\/item\/(\d+)/)?.[1];
+
   if (!id) {
     alert("Could not find a Marketplace item id in this URL.");
     return;
@@ -256,8 +264,11 @@ const scrapeListing = async () => {
       }
 
       const copied = copy(response.url);
+
       alert(
-        copied ? `Copied:\n${response.url}` : `Copy this link:\n${response.url}`,
+        copied
+          ? `Copied:\n${response.url}`
+          : `Copy this link:\n${response.url}`,
       );
     },
   );
@@ -284,6 +295,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
       const json = await response.json();
       const id = json.id || message.payload?.id;
+
       sendResponse({
         ok: true,
         url: `${FIXBOOK}/marketplace/item/${encodeURIComponent(id)}`,
