@@ -26,8 +26,19 @@ const blank = (value: string) =>
     ? ""
     : value.trim();
 
+const cleanTitle = (value: string) =>
+  oneLine(
+    value
+      .replace(/^\(\d+\+?\)\s*/, "")
+      .replace(/^Marketplace\s*[-–—]\s*/i, "")
+      .replace(/\s*\|\s*Facebook$/i, ""),
+  );
+
 const mdLabel = (value: string) =>
-  oneLine(value.replaceAll(/[\[\]*]/g, "")).slice(0, 120) || "Marketplace listing";
+  cleanTitle(value).replaceAll(/[\[\]*]/g, "").slice(0, 120) || "Marketplace listing";
+
+const usableImage = (url: string) =>
+  url.startsWith("https://") && url.length <= 2048 && !/\/t45\./.test(url);
 
 const locationOf = (listed: string) => {
   const cleaned = oneLine(listed.replace(/^Listed\s+/i, ""));
@@ -59,29 +70,29 @@ const cleanDescription = (listing: Listing) => {
 };
 
 const galleryImages = (urls: string[]) =>
-  urls
-    .filter(
-      (url) =>
-        url.length <= 2048 &&
-        /^https:\/\/.+\.(png|gif|jpe?g|webp|avif)(\?|#|$)/i.test(url),
-    )
-    .slice(0, 10);
+  urls.filter((url) => usableImage(url) && /\.(png|gif|jpe?g|webp|avif)(\?|#|$)/i.test(url)).slice(0, 10);
 
-const headerText = (listing: Listing) => {
+const listedLine = (listed: string) => {
+  const cleaned = oneLine(listed);
+  return cleaned && !/^listed on facebook marketplace$/i.test(cleaned) ? cleaned : "";
+};
+
+const headerText = (listing: Listing, description: string) => {
   const price = blank(listing.price);
-  const location = locationOf(listing.listed);
   const specs = listing.details
     .map(oneLine)
-    .filter((detail) => detail.length > 1 && detail.length < 80)
-    .slice(0, 4);
-  const priceLine = [price && `**${price}**`, location].filter(Boolean).join(" · ");
+    .filter((detail) => detail.length > 1 && detail.length < 160)
+    .slice(0, 8);
 
   return [
     `# **[${mdLabel(listing.title)}](${facebookUrl(listing.id)})**`,
-    priceLine,
+    price && `**${price}**`,
+    listedLine(listing.listed),
     ...specs,
+    description && "",
+    description,
   ]
-    .filter(Boolean)
+    .filter((line) => line !== "")
     .join("\n");
 };
 
@@ -90,11 +101,10 @@ const embedDocument = (listing: Listing, description: string, images: string[]) 
     type: 17,
     accent_color: ACCENT,
     components: [
-      { type: 10, content: headerText(listing) },
+      { type: 10, content: headerText(listing, description) },
       ...(images.length
         ? [{ type: 12, items: images.map((url) => ({ media: { url } })) }]
         : []),
-      ...(description ? [{ type: 10, content: description }] : []),
       { type: 14, spacing: 1 },
       {
         type: 1,
@@ -136,12 +146,12 @@ const componentEmbed = (listing: Listing) => {
 };
 
 const embedHtml = (listing: Listing, pageUrl: string) => {
-  const title = oneLine(listing.title);
-  const description = [blank(listing.price), locationOf(listing.listed), oneLine(cleanDescription(listing))]
+  const title = cleanTitle(listing.title);
+  const description = [blank(listing.price), listedLine(listing.listed), oneLine(cleanDescription(listing))]
     .filter(Boolean)
     .join(" · ")
     .slice(0, 200);
-  const images = (listing.images ?? []).filter((url) => url.startsWith("https://")).slice(0, 4);
+  const images = (listing.images ?? []).filter(usableImage).slice(0, 4);
   const payload = componentEmbed(listing);
 
   return `<!DOCTYPE html>
