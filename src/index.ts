@@ -35,7 +35,9 @@ const cleanTitle = (value: string) =>
   );
 
 const mdLabel = (value: string) =>
-  cleanTitle(value).replaceAll(/[\[\]*]/g, "").slice(0, 120) || "Marketplace listing";
+  cleanTitle(value)
+    .replaceAll(/[\[\]*]/g, "")
+    .slice(0, 120) || "Marketplace listing";
 
 const usableImage = (url: string) =>
   url.startsWith("https://") && url.length <= 2048 && !/\/t45\.1600/.test(url);
@@ -60,7 +62,10 @@ const cleanDescription = (listing: Listing) => {
   }
 
   return text
-    .replace(/\b(Location is approximate|Send seller a message|Seller's description)\b/gi, " ")
+    .replace(
+      /\b(Location is approximate|Send seller a message|Seller's description)\b/gi,
+      " ",
+    )
     .replace(/\s*(See more|See less)\s*$/i, "")
     .replace(/^#{1,3}\s*/gm, "")
     .replace(/[^\S\n]+/g, " ")
@@ -70,7 +75,12 @@ const cleanDescription = (listing: Listing) => {
 };
 
 const galleryImages = (urls: string[]) =>
-  urls.filter((url) => usableImage(url) && /\.(png|gif|jpe?g|webp|avif)(\?|#|$)/i.test(url)).slice(0, 10);
+  urls
+    .filter(
+      (url) =>
+        usableImage(url) && /\.(png|gif|jpe?g|webp|avif)(\?|#|$)/i.test(url),
+    )
+    .slice(0, 10);
 
 const placeLine = (listed: string) => {
   const cleaned = oneLine(listed);
@@ -130,21 +140,31 @@ const shorten = (value: string, limit: number) => {
   const text = value.replace(/…$/, "").trim();
   if (text.length <= limit) return text;
   if (limit < 2) return "";
-  const cut = text.slice(0, limit - 1).replace(/\s+\S*$/, "").trimEnd();
+  const cut = text
+    .slice(0, limit - 1)
+    .replace(/\s+\S*$/, "")
+    .trimEnd();
   const kept = cut || text.slice(0, limit - 1).trimEnd();
   return kept ? `${kept}…` : "";
 };
 
 const tidyDescription = (listing: Listing) => {
-  const body = cleanDescription(listing)
+  const lines = cleanDescription(listing)
     .split(/\n(?=seller information|seller details|joined facebook\b)/i)[0]
     .replace(/\s*see (more|less)\b/gi, "")
     .replace(/\blocation is approximate\b/gi, "")
     .split(/\n+/)
     .map((line) => line.replace(/^[-•🔶◆✓✔]\s*/, "").trim())
-    .filter((line) => line && !/^key features:?$/i.test(line) && !/^ad$/i.test(line))
-    .join("\n");
-  return shorten(body, 500);
+    .filter(
+      (line) =>
+        line &&
+        !/^key features:?$/i.test(line) &&
+        !/^ad$/i.test(line) &&
+        !/^located in$/i.test(line),
+    );
+  const clipped = lines.slice(0, 6).join("\n");
+  const text = shorten(clipped, 320);
+  return lines.length > 6 && !text.endsWith("…") ? `${text}…` : text;
 };
 
 const priceLine = (price: string) => {
@@ -164,26 +184,49 @@ const headerText = (listing: Listing, description: string) => {
   return lines.join("\n");
 };
 
-const embedDocument = (listing: Listing, description: string, images: string[]) => ({
+const embedDocument = (
+  listing: Listing,
+  description: string,
+  images: string[],
+) => ({
   component: {
     type: 17,
     accent_color: ACCENT,
     components: [
       { type: 10, content: headerText(listing, description) },
       ...(images.length
-        ? [{ type: 12, items: images.map((image) => ({ media: { url: image } })) }]
+        ? [
+            {
+              type: 12,
+              items: images.map((image) => ({ media: { url: image } })),
+            },
+          ]
         : []),
       { type: 14, spacing: 1 },
       {
         type: 1,
-        components: [{ type: 2, style: 5, label: "View listing", url: facebookUrl(listing.id) }],
+        components: [
+          {
+            type: 2,
+            style: 5,
+            label: "View listing",
+            url: facebookUrl(listing.id),
+          },
+        ],
       },
     ],
   },
 });
 
-const serializeEmbed = (listing: Listing, description: string, images: string[]) =>
-  JSON.stringify(embedDocument(listing, description, images)).replaceAll("<", "\\u003c");
+const serializeEmbed = (
+  listing: Listing,
+  description: string,
+  images: string[],
+) =>
+  JSON.stringify(embedDocument(listing, description, images)).replaceAll(
+    "<",
+    "\\u003c",
+  );
 
 const componentEmbed = (listing: Listing) => {
   let images = galleryImages(listing.images ?? []);
@@ -191,7 +234,8 @@ const componentEmbed = (listing: Listing) => {
 
   const size = () => bytes(serializeEmbed(listing, description, images));
 
-  while (size() > MAX_EMBED_BYTES && images.length) images = images.slice(0, -1);
+  while (size() > MAX_EMBED_BYTES && images.length)
+    images = images.slice(0, -1);
   while (size() > MAX_EMBED_BYTES && description) {
     const next = shorten(description, description.length - 40);
     description = next.length < description.length ? next : "";
@@ -204,7 +248,11 @@ const componentEmbed = (listing: Listing) => {
 const embedHtml = (listing: Listing, pageUrl: string) => {
   const title = cleanTitle(listing.title);
   const description = shorten(
-    [blank(listing.price), placeLine(listing.listed), oneLine(cleanDescription(listing))]
+    [
+      blank(listing.price),
+      placeLine(listing.listed),
+      oneLine(cleanDescription(listing)),
+    ]
       .filter(Boolean)
       .join(" · "),
     200,
@@ -234,14 +282,20 @@ const app = new Hono();
 
 app.get("/marketplace/item/:id", async (c) => {
   const { id } = c.req.param();
-  const [listing] = await db.select().from(listings).where(eq(listings.id, id)).limit(1);
+  const [listing] = await db
+    .select()
+    .from(listings)
+    .where(eq(listings.id, id))
+    .limit(1);
   if (!listing) return c.json({ error: "Not found" }, 404);
 
   if (!BOT_UA.test(c.req.header("user-agent") ?? "")) {
     return c.redirect(facebookUrl(id), 301);
   }
 
-  return c.html(embedHtml(listing, new URL(`/marketplace/item/${id}`, c.req.url).href));
+  return c.html(
+    embedHtml(listing, new URL(`/marketplace/item/${id}`, c.req.url).href),
+  );
 });
 
 app.post("/", async (c) => {
@@ -254,11 +308,16 @@ app.post("/", async (c) => {
 
   const parsed = listingSchema.safeParse(body);
   if (!parsed.success) {
-    return c.json({ error: "Validation failed", issues: parsed.error.flatten() }, 400);
+    return c.json(
+      { error: "Validation failed", issues: parsed.error.flatten() },
+      400,
+    );
   }
 
   try {
-    await db.delete(listings).where(lt(listings.createdAt, sql`NOW() - INTERVAL '7 days'`));
+    await db
+      .delete(listings)
+      .where(lt(listings.createdAt, sql`NOW() - INTERVAL '7 days'`));
     await db.insert(listings).values(parsed.data).onConflictDoUpdate({
       target: listings.id,
       set: parsed.data,
