@@ -1,4 +1,4 @@
-const FIXBOOK = "https://fixbook-seven.vercel.app";
+const FIXBOOK = "https://fixbook-phi.vercel.app";
 
 chrome.action.onClicked.addListener((tab) => {
   if (!tab.id || !tab.url?.includes("facebook.com/marketplace/item")) return;
