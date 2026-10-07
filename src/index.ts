@@ -31,14 +31,14 @@ const cleanTitle = (value: string) =>
     value
       .replace(/^\(\d+\+?\)\s*/, "")
       .replace(/^Marketplace\s*[-–—]\s*/i, "")
-      .replace(/\s*\|\s*Facebook$/i, ""),
+      .replace(/\s*[|｜]\s*Facebook\b.*/i, ""),
   );
 
 const mdLabel = (value: string) =>
   cleanTitle(value).replaceAll(/[\[\]*]/g, "").slice(0, 120) || "Marketplace listing";
 
 const usableImage = (url: string) =>
-  url.startsWith("https://") && url.length <= 2048 && !/\/t45\./.test(url);
+  url.startsWith("https://") && url.length <= 2048 && !/\/t45\.1600/.test(url);
 
 const locationOf = (listed: string) => {
   const cleaned = oneLine(listed.replace(/^Listed\s+/i, ""));
@@ -74,26 +74,75 @@ const galleryImages = (urls: string[]) =>
 
 const listedLine = (listed: string) => {
   const cleaned = oneLine(listed);
-  return cleaned && !/^listed on facebook marketplace$/i.test(cleaned) ? cleaned : "";
+  if (!cleaned || /^listed on facebook marketplace$/i.test(cleaned)) return "";
+  const match = cleaned.match(/^listed\s+(.+?)\s+in\s+(.+)$/i);
+  if (!match) return `📍 ${cleaned}`;
+  return `📍 ${match[2].trim()} · ${match[1].trim()}`;
+};
+
+const specIcon = (detail: string) => {
+  const value = detail.toLowerCase();
+  if (/driven|\bkm\b|\bmi\b|miles/.test(value)) return "🛣️";
+  if (/transmission/.test(value)) return "⚙️";
+  if (/color/.test(value)) return "🎨";
+  if (/fuel/.test(value)) return "⛽";
+  if (/engine|horsepower|\bhp\b/.test(value)) return "🔧";
+  if (/owner/.test(value)) return "👤";
+  if (/condition/.test(value)) return "✨";
+  if (/drive|awd|fwd|4wd|4x4/.test(value)) return "🛞";
+  return "•";
+};
+
+const specLabel = (detail: string) =>
+  oneLine(detail)
+    .replace(/^driven\s+/i, "")
+    .replace(/^exterior color:\s*/i, "")
+    .replace(/\s*·\s*interior color:\s*/i, " · ")
+    .replace(/^fuel type:\s*/i, "")
+    .replace(/^engine size:\s*-?\s*/i, "")
+    .replace(/^horsepower:\s*/i, "")
+    .replace(/\s+transmission$/i, "")
+    .replace(/^-+\s*/, "");
+
+const specLines = (details: string[]) => {
+  const specs = details
+    .map(oneLine)
+    .filter((detail) => detail.length > 1 && detail.length < 160)
+    .slice(0, 6)
+    .map((detail) => `${specIcon(detail)} ${specLabel(detail)}`);
+  const lines = [];
+  for (let index = 0; index < specs.length; index += 2) {
+    lines.push(specs.slice(index, index + 2).join("  ·  "));
+  }
+  return lines;
+};
+
+const tidyDescription = (listing: Listing) => {
+  const lines = cleanDescription(listing)
+    .split(/\n(?=seller information|seller details|joined facebook\b)/i)[0]
+    .replace(/\s*see (more|less)\b/gi, "")
+    .replace(/\blocation is approximate\b/gi, "")
+    .split(/\n+/)
+    .map((line) => line.replace(/^[-•🔶◆]\s*/, "").trim())
+    .filter((line) => line && !/^key features:?$/i.test(line) && !/^ad$/i.test(line));
+  const prose = lines.find((line) => line.length > 80);
+  return prose ? prose.slice(0, 180) : lines.slice(0, 4).join(" · ");
+};
+
+const priceLine = (price: string) => {
+  const [current, previous] = price.split(" ~~");
+  return previous ? `**${current}** ~~${previous}` : `**${price}**`;
 };
 
 const headerText = (listing: Listing, description: string) => {
   const price = blank(listing.price);
-  const specs = listing.details
-    .map(oneLine)
-    .filter((detail) => detail.length > 1 && detail.length < 160)
-    .slice(0, 8);
-
-  return [
-    `# **[${mdLabel(listing.title)}](${facebookUrl(listing.id)})**`,
-    price && `**${price}**`,
-    listedLine(listing.listed),
-    ...specs,
-    description && "",
-    description,
-  ]
-    .filter((line) => line !== "")
-    .join("\n");
+  const lines = [`## [${mdLabel(listing.title)}](${facebookUrl(listing.id)})`];
+  if (price) lines.push(priceLine(price));
+  const listed = listedLine(listing.listed);
+  if (listed) lines.push(listed);
+  lines.push(...specLines(listing.details));
+  if (description) lines.push("", description);
+  return lines.join("\n");
 };
 
 const embedDocument = (listing: Listing, description: string, images: string[]) => ({
@@ -126,9 +175,7 @@ const serializeEmbed = (listing: Listing, description: string, images: string[])
 
 const componentEmbed = (listing: Listing) => {
   let images = galleryImages(listing.images ?? []);
-  let description = blank(listing.description)
-    ? cleanDescription(listing).slice(0, 400)
-    : "";
+  let description = blank(listing.description) ? tidyDescription(listing) : "";
 
   const size = () => bytes(serializeEmbed(listing, description, images));
 

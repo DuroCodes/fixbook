@@ -6,123 +6,102 @@ chrome.action.onClicked.addListener((tab) => {
 });
 
 const scrapeListing = async () => {
-  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const text = (el) => (el?.innerText || "").replace(/\s+/g, " ").trim();
   const cleanTitle = (value) =>
     value
       .replace(/^\(\d+\+?\)\s*/, "")
       .replace(/^Marketplace\s*[-–—]\s*/i, "")
-      .replace(/\s*\|\s*Facebook$/i, "")
+      .replace(/\s*[|｜]\s*Facebook\b.*/i, "")
       .replace(/\s+/g, " ")
       .trim();
-  const linesOf = (root) =>
-    (root?.innerText || "")
-      .split("\n")
-      .map((line) => line.replace(/\s+/g, " ").trim())
-      .filter(Boolean);
-  const section = (lines, start, end) => {
-    const from = lines.findIndex((line) => start.test(line));
-    if (from === -1) return [];
-    const to = lines.findIndex((line, index) => index > from && end.test(line));
-    return lines.slice(from + 1, to === -1 ? from + 16 : to);
-  };
 
-  const h1 = [...document.querySelectorAll("h1")].find((el) => {
-    const text = el.innerText.trim();
-    if (!text || text.length > 180 || /^marketplace$/i.test(text)) return false;
-    let node = el;
-    for (let depth = 0; node && depth < 8; depth++) {
-      if (/listed\s+.+\s+in\s+/i.test(node.innerText || "")) return true;
-      node = node.parentElement;
-    }
-    return false;
+  const headings = [...document.querySelectorAll("h1")].filter((el) => {
+    const label = text(el);
+    return label && !/^(search results|marketplace)$/i.test(label);
   });
-
-  let listingRoot = h1 || document.querySelector('[role="main"]');
-  if (h1) {
-    let node = h1;
-    while (node && node !== document.body) {
-      if (/listed\s+.+\s+in\s+|about this (vehicle|item)/i.test(node.innerText || "")) {
-        listingRoot = node;
-        break;
+  const panel = headings
+    .map((el) => {
+      let node = el;
+      for (let depth = 0; node && node !== document.body && depth < 25; depth++) {
+        if (/about this (vehicle|item|home)|seller's description/i.test(node.innerText || "")) {
+          return { el, root: node, size: node.innerText.length };
+        }
+        node = node.parentElement;
       }
-      node = node.parentElement;
-    }
-  }
+      return null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.size - b.size)[0];
 
-  const seeMore = [...(listingRoot?.querySelectorAll("button, [role='button']") || [])].filter((el) =>
-    /^see more$/i.test((el.innerText || el.getAttribute("aria-label") || "").trim()),
-  );
-  for (const button of seeMore) button.click();
-  if (seeMore.length) await wait(200);
-
-  const lines = linesOf(listingRoot);
-  const title = cleanTitle(h1?.innerText || "") || cleanTitle(document.title);
+  const root = panel?.root || document.querySelector('[role="main"]') || document.body;
+  const title = cleanTitle(text(panel?.el)) || cleanTitle(document.title);
+  const lines = (root.innerText || "")
+    .split("\n")
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
   const listed =
     lines.find((line) => /^listed\s+.+\s+in\s+.+/i.test(line)) || "Listed on Facebook Marketplace";
-  const listedAt = lines.indexOf(listed);
-  const priceMatch = lines
-    .slice(0, listedAt === -1 ? 8 : listedAt)
-    .map((line) => line.match(/(?:CA|US|AU|NZ)?\s?[$£€]\s?[\d,]+(?:\.\d{2})?|\bFree\b/gi))
-    .find(Boolean);
-  const price = priceMatch
-    ? priceMatch.length > 1
-      ? `${priceMatch[0]} ~~${priceMatch[1]}~~`
-      : priceMatch[0]
-    : "";
 
-  const noise = /^(see more|see less|message|share|save|follow)$/i;
-  const rawDetails = section(
-    lines,
-    /^about this (vehicle|item|home)$/i,
-    /^(seller'?s description|description|location is approximate|sponsored|today'?s picks)$/i,
-  ).filter((line) => !noise.test(line));
-  const details = [];
-  for (let i = 0; i < rawDetails.length; i++) {
-    const line = rawDetails[i];
-    if (/:$/.test(line) && rawDetails[i + 1] && !/:$/.test(rawDetails[i + 1])) {
-      details.push(`${line} ${rawDetails[++i]}`);
-    } else {
-      details.push(line);
+  let price = "";
+  let priceNode = panel?.el?.parentElement;
+  while (priceNode && priceNode !== root.parentElement) {
+    const matches = text(priceNode).match(/(?:CA|US|AU|NZ)?\s?[$£€]\s?[\d,]+(?:\.\d{2})?|\bFree\b/gi);
+    if (matches?.length && text(priceNode).length < 140) {
+      price = matches.length > 1 ? `${matches[0]} ~~${matches[1]}~~` : matches[0];
+      break;
     }
+    priceNode = priceNode.parentElement;
   }
 
-  let description = section(
-    lines,
-    /^seller'?s description$/i,
-    /^(location is approximate|sponsored|today'?s picks|about this (vehicle|item|home))$/i,
-  )
-    .filter((line) => !noise.test(line))
-    .join("\n");
-  if (!description && listedAt !== -1) {
-    description = lines
-      .slice(listedAt + 1, listedAt + 12)
-      .filter((line) => !noise.test(line) && !details.includes(line) && line.length > 40)
-      .join("\n");
-  }
+  const sectionText = (heading, stop) => {
+    let node = heading;
+    while (node?.parentElement && node.parentElement !== document.body) {
+      const parent = node.parentElement;
+      if ([...parent.querySelectorAll("h2")].some((el) => el !== heading && stop.test(text(el)))) break;
+      node = parent;
+    }
+    return (node?.innerText || "")
+      .replace(heading?.innerText || "", "")
+      .replace(/\s*see (more|less)\s*/gi, " ")
+      .replace(/[^\n]*location is approximate\s*/gi, "")
+      .trim();
+  };
 
-  const h1Box = h1?.getBoundingClientRect() || { top: 0, left: 800, right: 1200, bottom: 80 };
+  const labelsUnder = (heading, stop) => {
+    let node = heading?.parentElement;
+    let labels = [];
+    while (node && node !== document.body) {
+      if ([...node.querySelectorAll("h2")].some((el) => stop.test(text(el)) && el !== heading)) break;
+      labels = [...node.querySelectorAll("span[dir='auto']")]
+        .filter((span) => !span.querySelector("span") && !heading.contains(span))
+        .map((span) => text(span))
+        .filter((value) => value && value.length < 160 && !/^about this/i.test(value) && !stop.test(value));
+      node = node.parentElement;
+    }
+    return labels;
+  };
+
+  const about = [...root.querySelectorAll("h2")].find((el) =>
+    /^about this (vehicle|item|home)$/i.test(text(el)),
+  );
+  const details = about ? labelsUnder(about, /seller/i) : [];
+
+  const seller = [...root.querySelectorAll("h2")].find((el) => /seller'?s description/i.test(text(el)));
+  const description = seller ? sectionText(seller, /seller information|seller details|^ad$/i) : "";
+
+  let imageRoot = root;
+  for (let depth = 0; depth < 8 && imageRoot.parentElement; depth++) {
+    if (imageRoot.querySelector("img[alt*='Product photo' i]")) break;
+    imageRoot = imageRoot.parentElement;
+  }
   const images = [
     ...new Set(
-      [...document.querySelectorAll("img")]
-        .filter((img) => {
-          const src = img.currentSrc || img.src || "";
-          const box = img.getBoundingClientRect();
-          const leftOfTitle = box.right <= h1Box.left + 80;
-          const aboveTitle = box.bottom <= h1Box.top + 40 && box.left < h1Box.right;
-          const nearTitle = box.top < h1Box.bottom + 500 && box.bottom > h1Box.top - 700;
-          return (
-            /^https:\/\//.test(src) &&
-            !/\/t45\./.test(src) &&
-            !img.closest('[aria-label*="Sponsored" i]') &&
-            box.width >= 120 &&
-            box.height >= 120 &&
-            nearTitle &&
-            (leftOfTitle || aboveTitle)
-          );
-        })
-        .map((img) => img.currentSrc || img.src),
+      [...imageRoot.querySelectorAll("img")]
+        .filter((img) => /product photo/i.test(img.alt || ""))
+        .map((img) => img.currentSrc || img.src)
+        .filter((src) => /^https:\/\//.test(src) && !/\/t45\.1600|\/t39\.84726/.test(src)),
     ),
-  ].slice(0, 10);
+  ].slice(0, 4);
 
   const id = window.location.href.match(/marketplace\/item\/(\d+)/)?.[1];
   if (!id) {
