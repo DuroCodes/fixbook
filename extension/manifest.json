@@ -12,7 +12,7 @@
     "clipboardWrite"
   ],
   "host_permissions": [
-    "https://fixbook-seven.vercel.app/*"
+    "https://fixbook-phi.vercel.app/*"
   ],
   "background": {
     "service_worker": "background.js"
