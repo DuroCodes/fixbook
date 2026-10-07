@@ -93,8 +93,9 @@ const specIcon = (detail: string) => {
   if (/engine|horsepower|\bhp\b/.test(value)) return "🔧";
   if (/owner/.test(value)) return "👤";
   if (/condition/.test(value)) return "✨";
+  if (/title/.test(value)) return "✅";
   if (/drive|awd|fwd|4wd|4x4/.test(value)) return "🛞";
-  return "•";
+  return "";
 };
 
 const specLabel = (detail: string) =>
@@ -113,10 +114,14 @@ const specLines = (details: string[]) => {
     .map(oneLine)
     .filter((detail) => detail.length > 1 && detail.length < 160)
     .slice(0, 6)
-    .map((detail) => `${specIcon(detail)} ${specLabel(detail)}`);
+    .map((detail) => {
+      const icon = specIcon(detail);
+      const label = specLabel(detail);
+      return icon ? `${icon} ${label}` : label;
+    });
   const lines = [];
   for (let index = 0; index < specs.length; index += 2) {
-    lines.push(specs.slice(index, index + 2).join("  ·  "));
+    lines.push(specs.slice(index, index + 2).join(" · "));
   }
   return lines;
 };
@@ -154,8 +159,8 @@ const headerText = (listing: Listing, description: string) => {
   const listed = listedLine(listing.listed);
   if (listed) lines.push(`-# ${listed}`);
   const specs = specLines(listing.details);
-  if (specs.length) lines.push("", "### Details", ...specs);
-  if (description) lines.push("", "### Description", description);
+  if (specs.length) lines.push("### Details", ...specs);
+  if (description) lines.push("### Description", description);
   return lines.join("\n");
 };
 
