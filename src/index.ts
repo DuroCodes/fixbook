@@ -79,54 +79,67 @@ const placeLine = (listed: string) => {
   return match ? `${match[2].trim()} · ${match[1].trim()}` : cleaned;
 };
 
+const listedLine = (listed: string) => {
+  const place = placeLine(listed);
+  return place ? `📍 ${place}` : "";
+};
+
 const specIcon = (detail: string) => {
   const value = detail.toLowerCase();
-  if (/driven|\bkm\b|\bmi\b|miles/.test(value)) return "🚗";
+  if (/driven|\bkm\b|\bmi\b|miles/.test(value)) return "🛣️";
   if (/transmission/.test(value)) return "⚙️";
+  if (/color/.test(value)) return "🎨";
   if (/fuel/.test(value)) return "⛽";
   if (/engine|horsepower|\bhp\b/.test(value)) return "🔧";
   if (/owner/.test(value)) return "👤";
   if (/condition/.test(value)) return "✨";
-  if (/drive|awd|fwd|4wd|4x4/.test(value)) return "🚙";
-  return "";
+  if (/drive|awd|fwd|4wd|4x4/.test(value)) return "🛞";
+  return "•";
 };
 
 const specLabel = (detail: string) =>
   oneLine(detail)
     .replace(/^driven\s+/i, "")
+    .replace(/^exterior color:\s*/i, "")
+    .replace(/\s*·\s*interior color:\s*/i, " · ")
     .replace(/^fuel type:\s*/i, "")
     .replace(/^engine size:\s*-?\s*/i, "")
     .replace(/^horsepower:\s*/i, "")
     .replace(/\s+transmission$/i, "")
-    .replace(/\s+condition$/i, "")
     .replace(/^-+\s*/, "");
 
-const specChips = (details: string[]) =>
-  details
-    .flatMap((detail) => {
-      const both = detail.match(/exterior color:\s*(.+?)\s*·\s*interior color:\s*(.+)$/i);
-      if (both) {
-        return [
-          { emoji: "🎨", label: `${both[1].trim()} exterior` },
-          { emoji: "🎨", label: `${both[2].trim()} interior` },
-        ];
-      }
-      const label = specLabel(detail);
-      return label ? [{ emoji: specIcon(detail), label }] : [];
-    })
-    .filter((chip) => chip.label.length > 1 && chip.label.length < 80)
-    .slice(0, 6);
+const specLines = (details: string[]) => {
+  const specs = details
+    .map(oneLine)
+    .filter((detail) => detail.length > 1 && detail.length < 160)
+    .slice(0, 6)
+    .map((detail) => `${specIcon(detail)} ${specLabel(detail)}`);
+  const lines = [];
+  for (let index = 0; index < specs.length; index += 2) {
+    lines.push(specs.slice(index, index + 2).join("  ·  "));
+  }
+  return lines;
+};
+
+const shorten = (value: string, limit: number) => {
+  const text = value.replace(/…$/, "").trim();
+  if (text.length <= limit) return text;
+  if (limit < 2) return "";
+  const cut = text.slice(0, limit - 1).replace(/\s+\S*$/, "").trimEnd();
+  const kept = cut || text.slice(0, limit - 1).trimEnd();
+  return kept ? `${kept}…` : "";
+};
 
 const tidyDescription = (listing: Listing) => {
-  const lines = cleanDescription(listing)
+  const body = cleanDescription(listing)
     .split(/\n(?=seller information|seller details|joined facebook\b)/i)[0]
     .replace(/\s*see (more|less)\b/gi, "")
     .replace(/\blocation is approximate\b/gi, "")
     .split(/\n+/)
-    .map((line) => line.replace(/^[-•🔶◆]\s*/, "").trim())
-    .filter((line) => line && !/^key features:?$/i.test(line) && !/^ad$/i.test(line));
-  const prose = lines.find((line) => line.length > 80);
-  return prose ? prose.slice(0, 180) : lines.slice(0, 4).join(" · ");
+    .map((line) => line.replace(/^[-•🔶◆✓✔]\s*/, "").trim())
+    .filter((line) => line && !/^key features:?$/i.test(line) && !/^ad$/i.test(line))
+    .join("\n");
+  return shorten(body, 500);
 };
 
 const priceLine = (price: string) => {
@@ -134,94 +147,63 @@ const priceLine = (price: string) => {
   return previous ? `**${current}** ~~${previous}` : `**${price}**`;
 };
 
-const headerText = (listing: Listing) => {
+const headerText = (listing: Listing, description: string) => {
   const price = blank(listing.price);
   const lines = [`## [${mdLabel(listing.title)}](${facebookUrl(listing.id)})`];
   if (price) lines.push(priceLine(price));
-  const place = placeLine(listing.listed);
-  if (place) lines.push(`-# ${place}`);
+  const listed = listedLine(listing.listed);
+  if (listed) lines.push(`-# ${listed}`);
+  const specs = specLines(listing.details);
+  if (specs.length) lines.push("", "### Details", ...specs);
+  if (description) lines.push("", "### Description", description);
   return lines.join("\n");
 };
 
-const specRows = (chips: { emoji: string; label: string }[], url: string) => {
-  const rows = [];
-  for (let index = 0; index < chips.length; index += 3) {
-    rows.push({
-      type: 1,
-      components: chips.slice(index, index + 3).map((chip) => ({
-        type: 2,
-        style: 5,
-        label: chip.label,
-        url,
-        ...(chip.emoji ? { emoji: { name: chip.emoji } } : {}),
-      })),
-    });
-  }
-  return rows;
-};
+const embedDocument = (listing: Listing, description: string, images: string[]) => ({
+  component: {
+    type: 17,
+    accent_color: ACCENT,
+    components: [
+      { type: 10, content: headerText(listing, description) },
+      ...(images.length
+        ? [{ type: 12, items: images.map((image) => ({ media: { url: image } })) }]
+        : []),
+      { type: 14, spacing: 1 },
+      {
+        type: 1,
+        components: [{ type: 2, style: 5, label: "View listing", url: facebookUrl(listing.id) }],
+      },
+    ],
+  },
+});
 
-const embedDocument = (
-  listing: Listing,
-  description: string,
-  images: string[],
-  chips: { emoji: string; label: string }[],
-) => {
-  const url = facebookUrl(listing.id);
-  return {
-    component: {
-      type: 17,
-      accent_color: ACCENT,
-      components: [
-        { type: 10, content: headerText(listing) },
-        ...specRows(chips, url),
-        ...(description ? [{ type: 10, content: description }] : []),
-        ...(images.length
-          ? [{ type: 12, items: images.map((image) => ({ media: { url: image } })) }]
-          : []),
-        { type: 14, spacing: 1 },
-        {
-          type: 1,
-          components: [{ type: 2, style: 5, label: "View listing", url }],
-        },
-      ],
-    },
-  };
-};
-
-const serializeEmbed = (
-  listing: Listing,
-  description: string,
-  images: string[],
-  chips: { emoji: string; label: string }[],
-) => JSON.stringify(embedDocument(listing, description, images, chips)).replaceAll("<", "\\u003c");
+const serializeEmbed = (listing: Listing, description: string, images: string[]) =>
+  JSON.stringify(embedDocument(listing, description, images)).replaceAll("<", "\\u003c");
 
 const componentEmbed = (listing: Listing) => {
   let images = galleryImages(listing.images ?? []);
   let description = blank(listing.description) ? tidyDescription(listing) : "";
-  let chips = specChips(listing.details);
 
-  const size = () => bytes(serializeEmbed(listing, description, images, chips));
+  const size = () => bytes(serializeEmbed(listing, description, images));
 
   while (size() > MAX_EMBED_BYTES && images.length) images = images.slice(0, -1);
   while (size() > MAX_EMBED_BYTES && description) {
-    const next = description
-      .slice(0, Math.max(0, description.length - 40))
-      .replace(/\s+\S*$/, "")
-      .trimEnd();
+    const next = shorten(description, description.length - 40);
     description = next.length < description.length ? next : "";
   }
-  while (size() > MAX_EMBED_BYTES && chips.length) chips = chips.slice(0, -1);
 
-  const json = serializeEmbed(listing, description, images, chips);
+  const json = serializeEmbed(listing, description, images);
   return bytes(json) <= MAX_EMBED_BYTES ? json : "";
 };
 
 const embedHtml = (listing: Listing, pageUrl: string) => {
   const title = cleanTitle(listing.title);
-  const description = [blank(listing.price), placeLine(listing.listed), oneLine(cleanDescription(listing))]
-    .filter(Boolean)
-    .join(" · ")
-    .slice(0, 200);
+  const description = shorten(
+    [blank(listing.price), placeLine(listing.listed), oneLine(cleanDescription(listing))]
+      .filter(Boolean)
+      .join(" · "),
+    200,
+  );
   const images = (listing.images ?? []).filter(usableImage).slice(0, 4);
   const payload = componentEmbed(listing);
 
